@@ -1,0 +1,70 @@
+{
+  "name": "rate-guard",
+  "version": "0.1.0",
+  "description": "Fila in-memory com rate limiting (Token Bucket), retentativas inteligentes (backoff + jitter), sync de headers do provedor, AIMD e previsão de over-limit — evita erros 429 sem Redis.",
+  "type": "module",
+  "license": "MIT",
+  "author": "",
+  "homepage": "https://github.com/YOUR_GITHUB_USERNAME/rate-guard#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YOUR_GITHUB_USERNAME/rate-guard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR_GITHUB_USERNAME/rate-guard/issues"
+  },
+  "keywords": [
+    "rate-limiting",
+    "token-bucket",
+    "backoff",
+    "retry",
+    "429",
+    "too-many-requests",
+    "ai",
+    "llm",
+    "openai",
+    "anthropic",
+    "queue",
+    "p-queue",
+    "no-redis",
+    "in-memory",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "node --test --import tsx/esm ./test/**/*.test.ts",
+    "test:watch": "node --test --watch --import tsx/esm ./test/**/*.test.ts",
+    "example": "tsx examples/basic-usage.ts",
+    "example:openai": "tsx examples/openai-integration.ts"
+  },
+  "dependencies": {
+    "p-queue": "^8.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^22.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.20.0",
+    "@typescript-eslint/parser": "^8.20.0",
+    "eslint": "^9.18.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
