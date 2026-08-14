@@ -1,6 +1,8 @@
 # rate-guard
 
-> Fila in-memory com rate limiting (Token Bucket), retentativas inteligentes (backoff + jitter), sync de headers, AIMD e previsão de over-limit — evita erros `429 Too Many Requests` em provedores de IA **sem Redis**.
+> Languages: [Português](./README.md) • [English](./README.en.md)
+
+> 🛡️ **rate-guard** — seu guarda-costas contra 429. Fila inteligente que aprende o ritmo do provedor, pausa quando ele pede, e nunca te deixa na mão. Zero Redis, zero drama, só código que funciona.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)

@@ -1,16 +1,16 @@
 export interface RateBudget {
-  /** Quantidade disponível no momento da checagem, já descontando o que foi consumido. */
+  /** Available amount at check time, already discounting what was consumed. */
   readonly remaining: number;
-  /** Capacidade máxima atingida após regeneração completa. */
+  /** Maximum capacity reached after full regeneration. */
   readonly capacity: number;
 }
 
 export interface RateResult {
-  /** Tempo efetivamente esperado (ms). 0 quando havia saldo suficiente imediato. */
+  /** Time effectively waited (ms). 0 when there was enough immediate budget. */
   readonly waitedMs: number;
-  /** Sempre true em implementação normal. */
+  /** Always true in a normal implementation. */
   readonly ok: true;
-  /** Tokens consumidos. */
+  /** Tokens consumed. */
   readonly consumed: number;
 }
 
@@ -18,12 +18,12 @@ export interface RateLimit {
   acquire(cost: number): Promise<RateResult>;
   available(): RateBudget;
   /**
-   * Hook de sincronização genérica. Implementações que não suportam
-   * sincronização multi-eixo (ex.: `CompositeRateLimiter` que tem RPM e
-   * TPM separados) podem deixar este método como noop; a fila tenta o
-   * cast para `CompositeRateLimiter` para despachar de forma específica.
+   * Generic sync hook. Implementations that don't support multi-axis
+   * synchronization (e.g. `CompositeRateLimiter` which has separate RPM and
+   * TPM) can leave this as a noop; the queue tries the cast to
+   * `CompositeRateLimiter` to dispatch specifically.
    *
-   * Default: noop na interface.
+   * Default: noop on the interface.
    */
   sync?(remaining: number, capacity: number): void;
 }
@@ -37,10 +37,10 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Bucket genérico (leaky/continuo) que regenera `capacity` tokens a cada intervalo.
+ * Generic (leaky/continuous) bucket that regenerates `capacity` tokens every interval.
  *
- * `intervalMs` é o período de referência (ex.: 60_000ms). O bucket regenera tokens
- * de forma contínua, proporcional ao tempo decorrido, suavizando o limite.
+ * `intervalMs` is the reference period (e.g. 60_000ms). The bucket regenerates
+ * tokens continuously, proportional to elapsed time, smoothing the limit.
  */
 abstract class ContinuousBucket implements RateLimit {
   private tokens: number;
@@ -49,8 +49,8 @@ abstract class ContinuousBucket implements RateLimit {
   private readonly intervalMs: number;
 
   constructor(capacity: number, intervalMs: number) {
-    if (capacity <= 0) throw new Error("capacity deve ser > 0");
-    if (intervalMs <= 0) throw new Error("intervalMs deve ser > 0");
+    if (capacity <= 0) throw new Error("capacity must be > 0");
+    if (intervalMs <= 0) throw new Error("intervalMs must be > 0");
     this.capacity = capacity;
     this.intervalMs = intervalMs;
     this.tokens = capacity;
@@ -65,7 +65,7 @@ abstract class ContinuousBucket implements RateLimit {
   }
 
   async acquire(cost: number): Promise<RateResult> {
-    if (cost < 0) throw new Error("cost deve ser >= 0");
+    if (cost < 0) throw new Error("cost must be >= 0");
     let waited = 0;
 
     for (;;) {
@@ -84,11 +84,11 @@ abstract class ContinuousBucket implements RateLimit {
   }
 
   /**
-   * Sincroniza o bucket com a realidade do provedor. Reajusta `capacity`,
-   * fixa `tokens` em `remaining` (clamped a `[0, capacity]`) e zera o relógio
-   * de regeneração para evitar inflar o saldo no próximo `refill`.
+   * Syncs the bucket with the provider's reality. Re-adjusts `capacity`,
+   * sets `tokens` to `remaining` (clamped to `[0, capacity]`) and resets the
+   * regeneration clock to avoid inflating the balance on the next `refill`.
    *
-   * Ignora chamadas com `capacity <= 0` ou `remaining < 0`.
+   * Ignores calls with `capacity <= 0` or `remaining < 0`.
    */
   sync(remaining: number, capacity: number): void {
     if (capacity <= 0) return;
@@ -109,7 +109,7 @@ abstract class ContinuousBucket implements RateLimit {
   }
 }
 
-/** Rate limiter de Requisições por Minuto (RPM). */
+/** Rate limiter for Requests per Minute (RPM). */
 export class RequestRateLimiter extends ContinuousBucket {
   constructor(rpm: number) {
     super(rpm, 60_000);
@@ -119,7 +119,7 @@ export class RequestRateLimiter extends ContinuousBucket {
   }
 }
 
-/** Rate limiter de Tokens por Minuto (TPM). */
+/** Rate limiter for Tokens per Minute (TPM). */
 export class TokenRateLimiter extends ContinuousBucket {
   constructor(tpm: number) {
     super(tpm, 60_000);
@@ -130,8 +130,9 @@ export class TokenRateLimiter extends ContinuousBucket {
 }
 
 /**
- * Composição dos dois limitadores (RPM e TPM). A aquisição sequencial só desconta
- * do segundo após o primeiro liberar; o tempo de espera é somado.
+ * Composition of the two limiters (RPM and TPM). Sequential acquisition only
+ * discounts from the second after the first releases; the wait time is
+ * summed.
  */
 export class CompositeRateLimiter implements RateLimit {
   private readonly rpm: RequestRateLimiter;
@@ -167,18 +168,17 @@ export class CompositeRateLimiter implements RateLimit {
   }
 
   /**
-   * Sincronização genérica via `RateLimit.sync` é noop: o `CompositeRateLimiter`
-   * tem dois eixos independentes (RPM/TPM), então não há como atribuir um
-   * único par `(remaining, capacity)` a ambos. Use `syncRpmTpm` que é
-   * específico.
+   * Generic sync via `RateLimit.sync` is a noop: `CompositeRateLimiter`
+   * has two independent axes (RPM/TPM), so a single `(remaining, capacity)`
+   * pair can't be attributed to both. Use the specific `syncRpmTpm`.
    */
   sync(_remaining: number, _capacity: number): void {
     //noop
   }
 
   /**
-   * Despacha sincronização para os buckets internos. Parâmetros `undefined`
-   * deixam o bucket correspondente inalterado (preserva estado atual).
+   * Dispatches synchronization to the internal buckets. `undefined` params
+   * leave the corresponding bucket unchanged (preserves current state).
    */
   syncRpmTpm(
     rpm: { remaining: number; capacity: number } | undefined,
@@ -190,17 +190,18 @@ export class CompositeRateLimiter implements RateLimit {
 }
 
 /**
- * Aplica margem de segurança (0 < margin <= 1) sobre os limites anunciados
- * pelo provedor. Operar em 80% do teto (default) acomoda janelas de pico
- * sem rejeitar requests — o provedor está sujeito a variações internas.
+ * Applies a safety margin (0 < margin <= 1) over the limits announced by the
+ * provider. Operating at 80% of the ceiling (default) accommodates peak
+ * windows without rejecting requests — the provider is subject to internal
+ * variation.
  *
- * Uso típico:
+ * Typical use:
  *   const { rpm, tpm } = withSafetyMargin(500, 90_000, 0.8);
  *   new CompositeRateLimiter(rpm, tpm);
  *
- * Não altera `remaining` na fila: o bucket começa cheio na capacity reduzida.
- * Quando o sync de headers chegar, se o provedor anunciar mais capacidade, o
- * bucket pode expandir — o sync é a fonte da verdade.
+ * Doesn't change `remaining` in the queue: the bucket starts full at the
+ * reduced capacity. When the header sync arrives, if the provider announces
+ * more capacity, the bucket can expand — sync is the source of truth.
  */
 export function withSafetyMargin(
   rpm: number,
@@ -208,7 +209,7 @@ export function withSafetyMargin(
   margin = 0.8,
 ): { rpm: number; tpm: number } {
   if (!(margin > 0 && margin <= 1)) {
-    throw new Error("margin deve estar em (0, 1]");
+    throw new Error("margin must be in (0, 1]");
   }
   return {
     rpm: Math.max(1, Math.floor(rpm * margin)),

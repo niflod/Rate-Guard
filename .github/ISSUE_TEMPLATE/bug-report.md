@@ -6,6 +6,8 @@ labels: ["bug"]
 assignees: ""
 ---
 
+> Languages: [Português](./bug-report.md) • [English](./bug-report.en.md)
+
 ## Descrição do bug
 
 Descreva claramente o que aconteceu.

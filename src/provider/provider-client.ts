@@ -6,7 +6,7 @@ export interface ProviderRequest {
   readonly method?: string;
   readonly headers?: Record<string, string>;
   readonly body?: BodyInit;
-  /** Estimativa de tokens consumidos pela requisição (para TPM). */
+  /** Estimate of tokens consumed by the request (for TPM). */
   readonly estimatedTokens?: number;
 }
 
@@ -23,14 +23,14 @@ export interface ProviderClient {
 export interface DefaultProviderClientOptions {
   readonly baseUrl: string;
   readonly apiKey: string;
-  /** Função fetch injetável (para testes). Default: global fetch. */
+  /** Injectable fetch function (for tests). Default: global fetch. */
   readonly fetchFn?: typeof fetch;
 }
 
 function parseRetryAfter(headerValue: string | null): number | undefined {
   if (headerValue === null) return undefined;
   const trimmed = headerValue.trim();
-  // Pode ser segundos (HTTP-date raramente usado aqui).
+  // Can be seconds (HTTP-date rarely used here).
   const seconds = Number.parseFloat(trimmed);
   if (Number.isFinite(seconds) && seconds >= 0) {
     return Math.round(seconds * 1000);
@@ -77,7 +77,7 @@ export class DefaultProviderClient implements ProviderClient {
         });
       }
       if (res.status >= 500) {
-        return retry(`Erro de servidor (HTTP ${res.status})`, {
+        return retry(`Server error (HTTP ${res.status})`, {
           status: res.status,
           retryAfterMs,
           retryable: true,
@@ -85,7 +85,7 @@ export class DefaultProviderClient implements ProviderClient {
       }
       if (res.status >= 400) {
         const text = await res.text().catch(() => "");
-        return retry(`Erro de cliente (HTTP ${res.status}): ${text}`, {
+        return retry(`Client error (HTTP ${res.status}): ${text}`, {
           status: res.status,
           retryable: false,
         });
@@ -97,9 +97,9 @@ export class DefaultProviderClient implements ProviderClient {
         body,
       });
     } catch (err) {
-      // Erro de rede/DNS/conexão fechada → recuperável.
+      // Network/DNS/connection-closed error -> retryable.
       const reason = err instanceof Error ? err.message : String(err);
-      return retry(`Falha de rede: ${reason}`, { status: 0, retryable: true });
+      return retry(`Network failure: ${reason}`, { status: 0, retryable: true });
     }
   }
 

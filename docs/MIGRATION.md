@@ -1,5 +1,7 @@
 # Guia de Migração
 
+> Languages: [Português](./MIGRATION.md) • [English](./MIGRATION.en.md)
+
 ## De BullMQ / Redis Queue
 
 | Conceito | BullMQ | rate-guard |

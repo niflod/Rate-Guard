@@ -12,7 +12,7 @@ function res(status: number, body: unknown, headers: Record<string, string> = {}
   });
 }
 
-test("fila enfileira, retenta em 429 e termina com sucesso", async () => {
+test("queue enqueues, retries on 429 and finishes with success", async () => {
   let calls = 0;
   const fetchFn: typeof fetch = async () => {
     calls++;
@@ -38,12 +38,12 @@ test("fila enfileira, retenta em 429 e termina com sucesso", async () => {
   assert.ok((r.value.body as { data: number }).data === 42);
 
   const retries = events.filter((e) => e.type === "retry").length;
-  assert.ok(retries >= 2, `esperado >=2 retry events, veio ${retries}`);
+  assert.ok(retries >= 2, `expected >=2 retry events, got ${retries}`);
   const success = events.find((e) => e.type === "success");
   assert.ok(success);
 });
 
-test("fila rejeita requisição não-recuperável sem retentativas", async () => {
+test("queue rejects a non-retryable request without retries", async () => {
   let calls = 0;
   const fetchFn: typeof fetch = async () => {
     calls++;
@@ -59,14 +59,14 @@ test("fila rejeita requisição não-recuperável sem retentativas", async () =>
   await assert.rejects(
     () => queue.enqueue({ path: "/p", estimatedTokens: 10 }),
     (err: unknown) => {
-      assert.match((err as Error).message, /não recuperável/);
+      assert.match((err as Error).message, /non-retryable/i);
       return true;
     },
   );
-  assert.equal(calls, 1, "não deveria haver retentativas para 401");
+  assert.equal(calls, 1, "there should be no retries for 401");
 });
 
-test("fila expõe size e pending", async () => {
+test("queue exposes size and pending", async () => {
   const fetchFn: typeof fetch = async () => res(200, { ok: 1 });
   const provider = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", fetchFn });
   const queue = new AiRequestQueue({
@@ -74,14 +74,14 @@ test("fila expõe size e pending", async () => {
     rateLimiter: new CompositeRateLimiter(60, 10_000),
     concurrency: 2,
   });
-  // Antes de adicionar: size/pending sao numbers
+  // Before adding: size/pending are numbers
   assert.ok(typeof queue.size === "number");
   assert.ok(typeof queue.pending === "number");
 });
 
-test("pausa automaticamente a fila em 429 com Retry-After e retoma após o prazo", async () => {
-  // Cenário: req1 recebe 429 com retry-after=0.05s (50ms) e depois 200.
-  // req2 deve esperar a auto-retomada antes de executar.
+test("auto-pauses the queue on 429 with Retry-After and resumes after the deadline", async () => {
+  // Scenario: req1 gets 429 with retry-after=0.05s (50ms) and then 200.
+  // req2 must wait for the auto-resume before executing.
   let firstReqCalls = 0;
   let secondReqStartedAt = 0;
   const fetchFn: typeof fetch = async (_url, init) => {
@@ -124,18 +124,18 @@ test("pausa automaticamente a fila em 429 com Retry-After e retoma após o prazo
 
   assert.ok((r1.value.body as { id?: string }).id === "ok1");
   assert.ok((r2.value.body as { id?: string }).id === "ok2");
-  assert.ok(elapsed >= 50, `req2 deveria iniciar só após ~50ms, iniciou em ${elapsed}ms`);
+  assert.ok(elapsed >= 50, `req2 should start only after ~50ms, started at ${elapsed}ms`);
 
   const paused = events.filter((e) => e.type === "paused" && e.reason === "auto");
   const resumed = events.filter((e) => e.type === "resumed" && e.reason === "auto");
-  assert.ok(paused.length >= 1, "esperado >=1 paused auto");
-  assert.ok(resumed.length >= 1, "esperado >=1 resumed auto");
+  assert.ok(paused.length >= 1, "expected >=1 paused auto");
+  assert.ok(resumed.length >= 1, "expected >=1 resumed auto");
   if (paused[0].type === "paused") {
     assert.ok((paused[0].durationMs ?? 0) <= 60_000);
   }
 });
 
-test("pausa manual não é anulada por Retry-After", async () => {
+test("manual pause is not cancelled by Retry-After", async () => {
   const fetchFn: typeof fetch = async () => res(429, { error: "rl" }, { "retry-after": "0.02" });
   const provider = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", fetchFn });
   const events: QueueEvent[] = [];
@@ -151,21 +151,21 @@ test("pausa manual não é anulada por Retry-After", async () => {
   queue.pause();
   const p = queue.enqueue({ path: "/p", estimatedTokens: 1 });
 
-  // Dá tempo para qualquer auto-retomada eventual aparecer.
+  // Give time for any eventual auto-resume to appear.
   await new Promise((r) => setTimeout(r, 150));
 
   const resumedAuto = events.filter((e) => e.type === "resumed" && e.reason === "auto");
-  assert.equal(resumedAuto.length, 0, "auto-retomada não deveria disparar com pausa manual ativa");
+  assert.equal(resumedAuto.length, 0, "auto-resume should not fire with a manual pause active");
 
   queue.resume();
   await assert.rejects(() => p, () => true);
 });
 
-test("sincroniza rateLimiter a partir de headers x-ratelimit-* em sucesso", async () => {
-  // Cenário: bucket local começa "cheio" (60 RPM, 10k TPM). Após a 1ª
-  // chamada, provedor anuncia via headers que restam só 10 RPM (cap 60) e
-  // 1000 TPM (cap 10k). A fila deve sincronizar o bucket. Validamos o
-  // estado do bucket diretamente — não precisamos chamar acquire de novo.
+test("syncs the rateLimiter from x-ratelimit-* headers on success", async () => {
+  // Scenario: local bucket starts "full" (60 RPM, 10k TPM). After the 1st
+  // call, the provider announces via headers that only 10 RPM (cap 60) and
+  // 1000 TPM (cap 10k) remain. The queue must sync the bucket. We validate
+  // the bucket state directly — we don't need to call acquire again.
   const fetchFn: typeof fetch = async () =>
     res(
       200,
@@ -188,8 +188,8 @@ test("sincroniza rateLimiter a partir de headers x-ratelimit-* em sucesso", asyn
   const r = await queue.enqueue({ path: "/p", estimatedTokens: 1 });
   assert.ok((r.value.body as { id: string }).id === "ok");
 
-  // Após sync, RPM bucket deve ter remaining=10 e capacity=60,
-  //   TPM bucket deve ter remaining=1000 e capacity=10000.
+  // After sync, the RPM bucket must have remaining=10 and capacity=60,
+  //   TPM bucket must have remaining=1000 and capacity=10000.
   const rpm = (rateLimiter as unknown as { rpm: TokenRateLimiter }).rpm;
   const tpm = (rateLimiter as unknown as { tpm: TokenRateLimiter }).tpm;
   const rRpm = rpm.available();
@@ -200,7 +200,7 @@ test("sincroniza rateLimiter a partir de headers x-ratelimit-* em sucesso", asyn
   assert.ok(rTpm.remaining <= 1000.01 && rTpm.remaining >= 999.9, `tpm.remaining=${rTpm.remaining}`);
 });
 
-test("sincroniza a partir de headers estilo Anthropic (anthropic-ratelimit-*)", async () => {
+test("syncs from Anthropic-style headers (anthropic-ratelimit-*)", async () => {
   const fetchFn: typeof fetch = async () =>
     res(
       200,
@@ -222,9 +222,9 @@ test("sincroniza a partir de headers estilo Anthropic (anthropic-ratelimit-*)", 
 
   await queue.enqueue({ path: "/p", estimatedTokens: 1 });
 
-  // Após sync, TPM capacity deve ser 5000 (não 10000 original).
-  // Como available() do Composite retorna razão, validamos cada bucket direto.
-  // Use cast para acessar internals:
+  // After sync, TPM capacity must be 5000 (not the original 10000).
+  // Since Composite's available() returns a ratio, we validate each bucket directly.
+  // Use a cast to access internals:
   const tpm = (rateLimiter as unknown as { tpm: TokenRateLimiter }).tpm;
   const tpmBudget = tpm.available();
   assert.equal(tpmBudget.capacity, 5000);
@@ -232,7 +232,7 @@ test("sincroniza a partir de headers estilo Anthropic (anthropic-ratelimit-*)", 
     `tpm.remaining=${tpmBudget.remaining}`);
 });
 
-test("fila ignora headers x-ratelimit ausentes sem alterar capacity", async () => {
+test("queue ignores missing x-ratelimit headers without altering capacity", async () => {
   const fetchFn: typeof fetch = async () => res(200, { id: "ok" });
   const provider = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", fetchFn });
   const rateLimiter = new CompositeRateLimiter(60, 10_000);
@@ -240,18 +240,18 @@ test("fila ignora headers x-ratelimit ausentes sem alterar capacity", async () =
 
   const rpm = (rateLimiter as unknown as { rpm: TokenRateLimiter }).rpm;
   const tpm = (rateLimiter as unknown as { tpm: TokenRateLimiter }).tpm;
-  const rpmCapAntes = rpm.available().capacity;
-  const tpmCapAntes = tpm.available().capacity;
+  const rpmCapBefore = rpm.available().capacity;
+  const tpmCapBefore = tpm.available().capacity;
 
   await queue.enqueue({ path: "/p", estimatedTokens: 1 });
 
-  // Sem headers x-ratelimit-* a fila não deve chamar sync, portanto a
-  //   capacity de cada bucket permanece inalterada.
-  assert.equal(rpm.available().capacity, rpmCapAntes);
-  assert.equal(tpm.available().capacity, tpmCapAntes);
+  // Without x-ratelimit-* headers the queue shouldn't call sync, so the
+  //   capacity of each bucket remains unchanged.
+  assert.equal(rpm.available().capacity, rpmCapBefore);
+  assert.equal(tpm.available().capacity, tpmCapBefore);
 });
 
-test("alimenta TokenEstimator com usage.total_tokens em sucesso", async () => {
+test("feeds TokenEstimator with usage.total_tokens on success", async () => {
   const fetchFn: typeof fetch = async () =>
     res(200, {
       id: "ok",
@@ -266,22 +266,22 @@ test("alimenta TokenEstimator com usage.total_tokens em sucesso", async () => {
     tokenEstimator: { initialEstimate: 100, alpha: 0.5 },
   });
 
-  await queue.enqueue({ path: "/p" }); // sem estimatedTokens — usa estimator
+  await queue.enqueue({ path: "/p" }); // no estimatedTokens — uses the estimator
   await queue.enqueue({ path: "/p" });
 
-  // Após 2 observações de 850: EWMA(α=0.5) começa em 100, primeiro sample
-  // substitui → 850, segundo sample → 0.5*850 + 0.5*850 = 850.
-  // Validamos que estimator convergiu perto do sample real.
+  // After 2 observations of 850: EWMA(alpha=0.5) starts at 100, first sample
+  // replaces it -> 850, second sample -> 0.5*850 + 0.5*850 = 850.
+  // We validate that the estimator converged close to the real sample.
   const cast = queue as unknown as {
     estimator: { current(): { estimate: number; samples: number } };
   };
   const snap = cast.estimator.current();
   assert.equal(snap.samples, 2);
   assert.ok(snap.estimate >= 840 && snap.estimate <= 860,
-    `esperado ~850, veio ${snap.estimate}`);
+    `expected ~850, got ${snap.estimate}`);
 });
 
-test("alimenta estimator com prompt_tokens + completion_tokens quando não há total_tokens", async () => {
+test("feeds estimator with prompt_tokens + completion_tokens when there's no total_tokens", async () => {
   const fetchFn: typeof fetch = async () =>
     res(200, {
       id: "ok",
@@ -303,9 +303,9 @@ test("alimenta estimator com prompt_tokens + completion_tokens quando não há t
   assert.equal(cast.estimator.current().estimate, 300);
 });
 
-test("emite predicted-over-limit quando estimativa excede TPM restante", async () => {
-  // Cenário: TPM sync baixo (5) mas capacity alta (1M) — regeneração rápida
-  // permite que o acquire complete em ~50ms sem hang.
+test("emits predicted-over-limit when estimate exceeds remaining TPM", async () => {
+  // Scenario: TPM sync is low (5) but capacity is high (1M) — fast
+  // regeneration lets acquire complete in ~50ms without hanging.
   let calls = 0;
   const fetchFn: typeof fetch = async () => {
     calls++;
@@ -333,27 +333,27 @@ test("emite predicted-over-limit quando estimativa excede TPM restante", async (
   });
 
   await queue.enqueue({ path: "/p", estimatedTokens: 1 });
-  // Após sucesso, headers sincronizaram TPM para remaining=5, capacity=1M.
-  //   Estimator viu 850 e (alpha=1) ficou em 850.
-  //   TPM com cap=1M regenera 1M/60s ≈ 16.6 tokens/ms, então esperar
-  //   de 5 até 850 demora ~50ms (sem hang).
+  // After success, headers synced TPM to remaining=5, capacity=1M.
+  //   Estimator saw 850 and (alpha=1) stayed at 850.
+  //   TPM with cap=1M regenerates 1M/60s ~= 16.6 tokens/ms, so waiting
+  //   from 5 to 850 takes ~50ms (no hang).
   events.length = 0;
-  await queue.enqueue({ path: "/p" }); // sem estimatedTokens → usa 850
+  await queue.enqueue({ path: "/p" }); // no estimatedTokens -> uses 850
 
   const predicted = events.filter((e) => e.type === "predicted-over-limit");
-  assert.ok(predicted.length >= 1, "esperado >=1 predicted-over-limit");
+  assert.ok(predicted.length >= 1, "expected >=1 predicted-over-limit");
   if (predicted[0].type === "predicted-over-limit") {
-    assert.ok(predicted[0].estimatedTokens >= 800, `esperado >=800, veio ${predicted[0].estimatedTokens}`);
-    // TPM regenera continuamente; entre sync (remaining=5) e verify (~30ms
-    // depois) pode ter regenerado ~30-50 tokens. Aceitamos ate 100 como
-    // tolerance para jitter de scheduling.
+    assert.ok(predicted[0].estimatedTokens >= 800, `expected >=800, got ${predicted[0].estimatedTokens}`);
+    // TPM regenerates continuously; between sync (remaining=5) and verify
+    // (~30ms later) it may have regenerated ~30-50 tokens. We accept up to
+    // 100 as tolerance for scheduling jitter.
     assert.ok(predicted[0].tpmRemaining <= 100,
-      `esperado <=100 (regeneração contínua), veio ${predicted[0].tpmRemaining}`);
+      `expected <=100 (continuous regeneration), got ${predicted[0].tpmRemaining}`);
     assert.equal(predicted[0].tpmCapacity, 1_000_000);
   }
 });
 
-test("não emite predicted-over-limit quando há saldo suficiente", async () => {
+test("doesn't emit predicted-over-limit when there's enough budget", async () => {
   const fetchFn: typeof fetch = async () =>
     res(200, { id: "ok", usage: { total_tokens: 100 } });
   const events: QueueEvent[] = [];
@@ -371,9 +371,9 @@ test("não emite predicted-over-limit quando há saldo suficiente", async () => 
   assert.equal(predicted.length, 0);
 });
 
-test("default rateLimiter aplica margem 0.8x sobre 500/90000", () => {
-  // Não passa rateLimiter — a fila deve construir um default com
-  //   CompositeRateLimiter(400, 72000) devido ao safetyMargin=0.8.
+test("default rateLimiter applies 0.8x margin over 500/90000", () => {
+  // No rateLimiter passed — the queue must build a default with
+  //   CompositeRateLimiter(400, 72000) due to safetyMargin=0.8.
   const fetchFn: typeof fetch = async () => res(200, { ok: 1 });
   const provider = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", fetchFn });
   const queue = new AiRequestQueue({ provider });
@@ -385,7 +385,7 @@ test("default rateLimiter aplica margem 0.8x sobre 500/90000", () => {
   assert.equal(rl.tpm.available().capacity, 72_000);
 });
 
-test("safetyMargin=1.0 desativa a margem (default cheio)", () => {
+test("safetyMargin=1.0 disables the margin (full default)", () => {
   const fetchFn: typeof fetch = async () => res(200, { ok: 1 });
   const provider = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", fetchFn });
   const queue = new AiRequestQueue({ provider, safetyMargin: 1.0 });
@@ -397,11 +397,11 @@ test("safetyMargin=1.0 desativa a margem (default cheio)", () => {
   assert.equal(rl.tpm.available().capacity, 90_000);
 });
 
-test("opts.rateLimiter explícito ignora safetyMargin", () => {
+test("explicit opts.rateLimiter ignores safetyMargin", () => {
   const fetchFn: typeof fetch = async () => res(200, { ok: 1 });
   const provider = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", fetchFn });
-  // Passa um CompositeRateLimiter(60, 10k). Mesmo com safetyMargin=0.5,
-  //   o explícito deve prevalecer.
+  // Passes a CompositeRateLimiter(60, 10k). Even with safetyMargin=0.5,
+  //   the explicit one must prevail.
   const queue = new AiRequestQueue({
     provider,
     rateLimiter: new CompositeRateLimiter(60, 10_000),
@@ -414,7 +414,7 @@ test("opts.rateLimiter explícito ignora safetyMargin", () => {
   assert.equal(rl.tpm.available().capacity, 10_000);
 });
 
-test("conc adaptive desligada por default mantém concurrency fixa", async () => {
+test("adaptive concurrency off by default keeps concurrency fixed", async () => {
   const fetchFn: typeof fetch = async () => res(429, { error: "rl" }, { "retry-after": "0.001" });
   const provider = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", fetchFn });
   const events: QueueEvent[] = [];
@@ -428,12 +428,12 @@ test("conc adaptive desligada por default mantém concurrency fixa", async () =>
 
   await assert.rejects(() => queue.enqueue({ path: "/p", estimatedTokens: 1 }), () => true);
 
-  assert.equal(queue.concurrency, 4, "sem adaptive, NÃO deve mudar");
+  assert.equal(queue.concurrency, 4, "without adaptive, it should NOT change");
   const changed = events.filter((e) => e.type === "concurrency-changed");
   assert.equal(changed.length, 0);
 });
 
-test("conc adaptive diminui em 429 (multiplicative decrease)", async () => {
+test("adaptive concurrency drops on 429 (multiplicative decrease)", async () => {
   let calls = 0;
   const fetchFn: typeof fetch = async () => {
     calls++;
@@ -455,19 +455,19 @@ test("conc adaptive diminui em 429 (multiplicative decrease)", async () => {
 
   await queue.enqueue({ path: "/p", estimatedTokens: 1 });
 
-  // 429 → 8/2 = 4. Sucesso → 4+1 = 5.
+  // 429 -> 8/2 = 4. Success -> 4+1 = 5.
   assert.equal(queue.concurrency, 5,
-    `esperado 5 (4 após 429 + 1 após sucesso), veio ${queue.concurrency}`);
+    `expected 5 (4 after 429 + 1 after success), got ${queue.concurrency}`);
 
   const decreases = events.filter((e) => e.type === "concurrency-changed" && e.reason === "decrease");
-  assert.ok(decreases.length >= 1, "esperado >=1 decrease");
+  assert.ok(decreases.length >= 1, "expected >=1 decrease");
   if (decreases[0].type === "concurrency-changed") {
     assert.equal(decreases[0].from, 8);
     assert.equal(decreases[0].to, 4);
   }
 });
 
-test("conc adaptive sobe em sucessos sucessivos até maxConcurrency", async () => {
+test("adaptive concurrency rises on consecutive successes up to maxConcurrency", async () => {
   const fetchFn: typeof fetch = async () => res(200, { id: "ok", usage: { total_tokens: 10 } });
   const provider = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", fetchFn });
   const queue = new AiRequestQueue({
@@ -482,13 +482,13 @@ test("conc adaptive sobe em sucessos sucessivos até maxConcurrency", async () =
   for (let i = 0; i < 4; i++) {
     await queue.enqueue({ path: "/p", estimatedTokens: 1 });
   }
-  assert.equal(queue.concurrency, 5, `esperado 5 após 4 sucessos a partir de 1`);
+  assert.equal(queue.concurrency, 5, `expected 5 after 4 successes starting from 1`);
   await queue.enqueue({ path: "/p", estimatedTokens: 1 });
-  assert.equal(queue.concurrency, 5, "limitado em maxConcurrency");
+  assert.equal(queue.concurrency, 5, "capped at maxConcurrency");
 });
 
-test("conc adaptive respeita minConcurrency em cascata de 429", async () => {
-  // mock sempre 429 — maxRetries=5 emula 6 tentativas falhando.
+test("adaptive concurrency respects minConcurrency on a 429 cascade", async () => {
+  // mock always 429 — maxRetries=5 emulates 6 failing attempts.
   const fetchFn: typeof fetch = async () => res(429, { error: "rl" }, { "retry-after": "0.001" });
   const provider = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", fetchFn });
   const queue = new AiRequestQueue({
@@ -505,7 +505,7 @@ test("conc adaptive respeita minConcurrency em cascata de 429", async () => {
     () => queue.enqueue({ path: "/p", estimatedTokens: 1 }),
     () => true,
   );
-  assert.equal(queue.concurrency, 1, `esperado 1 após multiplos 429, veio ${queue.concurrency}`);
+  assert.equal(queue.concurrency, 1, `expected 1 after multiple 429s, got ${queue.concurrency}`);
 });
 
 

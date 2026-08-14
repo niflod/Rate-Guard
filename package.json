@@ -1,7 +1,7 @@
 {
   "name": "rate-guard",
   "version": "0.1.0",
-  "description": "Fila in-memory com rate limiting (Token Bucket), retentativas inteligentes (backoff + jitter), sync de headers do provedor, AIMD e previsão de over-limit — evita erros 429 sem Redis.",
+  "description": "🛡️ rate-guard — your bodyguard against 429. A smart queue that learns the provider's pace, pauses when asked, and never leaves you hanging. Zero Redis, zero drama, just code that works.",
   "type": "module",
   "license": "MIT",
   "author": "",

@@ -1,5 +1,7 @@
 # Changelog
 
+> Languages: [Português](./CHANGELOG.md) • [English](./CHANGELOG.en.md)
+
 Todos os mudanças notáveis do projeto `rate-guard` serão documentados neste arquivo.
 
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

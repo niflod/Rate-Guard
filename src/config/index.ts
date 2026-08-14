@@ -8,9 +8,9 @@ export interface AppConfig {
   readonly baseBackoffMs: number;
   readonly maxBackoffMs: number;
   /**
-   * Fator de margem de segurança (0 < margin <= 1) aplicado aos limites
-   * anunciados pelo provedor. Default 0.8 — operar em 80% do teto
-   * absorve janelas de pico do provedor.
+   * Safety margin factor (0 < margin <= 1) applied to the limits announced
+   * by the provider. Default 0.8 — operating at 80% of the ceiling absorbs
+   * provider peak windows.
    */
   readonly safetyMargin: number;
 }
@@ -20,7 +20,7 @@ function parseEnv(name: string, fallback: number): number {
   if (raw === undefined || raw === "") return fallback;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`Variável de ambiente inválida: ${name}=${raw}`);
+    throw new Error(`Invalid environment variable: ${name}=${raw}`);
   }
   return parsed;
 }
@@ -30,7 +30,7 @@ function parseFloat(name: string, fallback: number, min: number, max: number): n
   if (raw === undefined || raw === "") return fallback;
   const parsed = Number.parseFloat(raw);
   if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
-    throw new Error(`Variável de ambiente inválida: ${name}=${raw}`);
+    throw new Error(`Invalid environment variable: ${name}=${raw}`);
   }
   return parsed;
 }

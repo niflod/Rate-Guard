@@ -6,6 +6,8 @@ labels: ["enhancement"]
 assignees: ""
 ---
 
+> Languages: [Português](./feature-request.md) • [English](./feature-request.en.md)
+
 ## Problema que resolve
 
 Descreva o problema que esta feature resolveria.

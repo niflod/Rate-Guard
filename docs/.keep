@@ -1,0 +1,9 @@
+# This folder holds the detailed documentation referenced by the README
+# (docs/API.md, docs/MIGRATION.md, docs/ARCHITECTURE.md, docs/RECIPES.md).
+# Until each one is written, we keep short stubs at the same paths so the
+# links in the README do not 404.
+#
+# Esta pasta armazena a documentacao detalhada referenciada pelo README
+# (docs/API.md, docs/MIGRATION.md, docs/ARCHITECTURE.md, docs/RECIPES.md).
+# Ate que cada um seja escrito, mantemos stubs curtos nos mesmos caminhos
+# para que os links no README nao fiquem 404.

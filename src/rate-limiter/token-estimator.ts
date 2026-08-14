@@ -1,33 +1,33 @@
 /**
- * Estimador de tokens por chamada usando EWMA (exponentially weighted moving
- * average). Aprende com `usage.total_tokens` das respostas de sucesso do
- * provedor e produz uma estimativa que:
+ * Per-call token estimator using EWMA (exponentially weighted moving
+ * average). Learns from `usage.total_tokens` on provider success responses
+ * and produces an estimate that:
  *
- * - Reage rápido a mudanças de padrão (alpha alto)
- * - Resistente a outliers (single-sample spike não domina a média)
- * - Sem armazenar histórico (O(1) memória)
+ * - Reacts quickly to pattern changes (high alpha)
+ * - Resistant to outliers (single-sample spike doesn't dominate the mean)
+ * - Stores no history (O(1) memory)
  *
  * @see https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average
  */
 export interface TokenEstimatorOptions {
   /**
-   * Fator de suavização da EWMA. 0 < alpha <= 1.
-   * - alpha=1: sem smoothing, sempre assume o último sample.
-   * - alpha=0.3 (default): reage em ~3-5 samples a uma mudança de padrão.
+   * EWMA smoothing factor. 0 < alpha <= 1.
+   * - alpha=1: no smoothing, always assumes the last sample.
+   * - alpha=0.3 (default): reacts in ~3-5 samples to a pattern change.
    */
   readonly alpha?: number;
   /**
-   * Estimativa inicial usada antes de qualquer sample real. Default: 1000.
+   * Initial estimate used before any real sample. Default: 1000.
    */
   readonly initialEstimate?: number;
-  /** Teto aplicado à estimativa (evita runaway de samples absurdos). */
+  /** Ceiling applied to the estimate (avoids runaway from absurd samples). */
   readonly maxEstimate?: number;
 }
 
 export interface TokenEstimateSnapshot {
-  /** Estimativa atual (EWMA). */
+  /** Current estimate (EWMA). */
   readonly estimate: number;
-  /** Número de samples observados. */
+  /** Number of samples observed. */
   readonly samples: number;
 }
 
@@ -42,34 +42,34 @@ export class TokenEstimator {
     this.maxEstimate = opts.maxEstimate ?? 1_000_000;
     const alpha = opts.alpha ?? 0.3;
     if (!(alpha > 0 && alpha <= 1)) {
-      throw new Error("alpha deve estar em (0, 1]");
+      throw new Error("alpha must be in (0, 1]");
     }
     this.alpha = alpha;
   }
 
-  /** Estimativa atual (heuristic) — sempre positiva e limitada. */
+  /** Current estimate (heuristic) — always positive and bounded. */
   current(): TokenEstimateSnapshot {
     return { estimate: Math.round(this.estimate), samples: this.samples };
   }
 
-  /** Indica se já observou samples reais (vs. initial). */
+  /** Whether it has observed real samples (vs. initial). */
   get hasRealData(): boolean {
     return this.samples > 0;
   }
 
   /**
-   * Atualiza a EWMA com um novo sample.
+   * Updates the EWMA with a new sample.
    *
    * `next = alpha * sample + (1 - alpha) * previous`
    *
-   * Valida: `sample > 0` (descarta zero/negativo) e clamp ao teto.
+   * Validates: `sample > 0` (discards zero/negative) and clamps to the ceiling.
    */
   observe(sample: number): void {
     if (!Number.isFinite(sample) || sample <= 0) return;
     const clamped = Math.min(sample, this.maxEstimate);
     if (this.samples === 0) {
-      // Primeiro sample real: substitui o initial em vez de suavizar contra
-      // ele — evita pessimismo prolongado quando initial é baixo.
+      // First real sample replaces the initial instead of smoothing against
+      // it — avoids prolonged pessimism when initial is low.
       this.estimate = clamped;
     } else {
       this.estimate = this.alpha * clamped + (1 - this.alpha) * this.estimate;

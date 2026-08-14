@@ -1,5 +1,7 @@
 # Security Policy
 
+> Languages: [Português](./SECURITY.md) • [English](./SECURITY.en.md)
+
 ## Reportando uma Vulnerabilidade
 
 Levamos segurança a sério. Se você descobrir uma vulnerabilidade

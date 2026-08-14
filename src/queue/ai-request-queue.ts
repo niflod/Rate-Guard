@@ -19,38 +19,38 @@ export interface AiRequestQueueOptions {
   readonly backoff?: BackoffOptions;
   readonly delayResolver?: RetryDelayResolver;
   /**
-   * Tempo máximo (ms) que a fila pode ficar pausada automaticamente por um
-   * `Retry-After` do provedor. Evita que um header mal-formado (ex.: "3600")
-   * trave a fila por tempo excessivo. Default: 60_000.
+   * Maximum time (ms) the queue can be auto-paused by a provider
+   * `Retry-After`. Prevents a malformed header (e.g. "3600") from freezing
+   * the queue for too long. Default: 60_000.
    */
   readonly maxAutoPauseMs?: number;
   /**
-   * Fator de segurança aplicado **apenas** ao rateLimiter default construído
-   * internamente (quando `rateLimiter` não é fornecido). Default: `0.8`
-   * (= 80% do RPM/TPM anunciado). Ignorado se `rateLimiter` for fornecido.
+   * Safety factor applied **only** to the default rateLimiter built
+   * internally (when `rateLimiter` is not provided). Default: `0.8`
+   * (= 80% of the announced RPM/TPM). Ignored if `rateLimiter` is provided.
    *
-   * Operar abaixo do teto absorve janelas de pico do provedor e reduz
-   * 429s sem sacrificar muito throughput. Use `1.0` para desativar.
+   * Operating below the ceiling absorbs provider peak windows and reduces
+   * 429s without sacrificing much throughput. Use `1.0` to disable.
    */
   readonly safetyMargin?: number;
   /**
-   * Configuração do `TokenEstimator` (EWMA). Quando ausente, usa defaults
+   * `TokenEstimator` (EWMA) configuration. When absent, uses defaults
    * (alpha=0.3, initialEstimate=1000).
    */
   readonly tokenEstimator?: TokenEstimatorOptions;
   /**
-   * Ativa concorrência adaptativa (AIMD — Additive Increase / Multiplicative
-   * Decrease). Em 429/5xx, dobra baixo (Math.floor(c/2)); em sucesso,
-   * cresce em +1 até o teto. Default: `false` (concorrência fixa).
+   * Enables adaptive concurrency (AIMD — Additive Increase / Multiplicative
+   * Decrease). On 429/5xx, halves down (Math.floor(c/2)); on success, grows
+   * by +1 up to the ceiling. Default: `false` (fixed concurrency).
    */
   readonly adaptiveConcurrency?: boolean;
   /**
-   * Teto de concorrência quando adaptativo está ativo. Default: o próprio
-   * `concurrency` (ou 8 se `concurrency` for 1).
+   * Concurrency ceiling when adaptive is on. Default: the `concurrency`
+   * itself (or 8 if `concurrency` is 1).
    */
   readonly maxConcurrency?: number;
   readonly minConcurrency?: number;
-  /** Função chamada a cada evento (telemetria, logs). */
+  /** Function called on every event (telemetry, logs). */
   readonly onEvent?: (event: QueueEvent) => void;
 }
 
@@ -64,10 +64,10 @@ export type QueueEvent =
   | { readonly type: "paused"; readonly reason: "auto" | "manual"; readonly untilMs?: number; readonly durationMs?: number }
   | { readonly type: "resumed"; readonly reason: "auto" | "manual" }
   /**
-   * Emitido ANTES de acquire quando a estimativa calibrada de tokens para
-   * esta chamada excede o TPM restante estimado do rateLimiter. A fila
-   * ainda tentará (acquire vai esperar a regeneração), mas a aplicação
-   * pode usar o sinal para logar/alertar ou até cancelar.
+   * Emitted BEFORE acquire when the calibrated token estimate for this call
+   * exceeds the rateLimiter's estimated remaining TPM. The queue still
+   * tries (acquire will sleep), but the application can use the signal to
+   * log/alert or even cancel.
    */
   | {
       readonly type: "predicted-over-limit";
@@ -77,9 +77,9 @@ export type QueueEvent =
       readonly tpmCapacity: number;
     }
   /**
-   * Emitido quando a concorrência adaptativa muda o limite do `p-queue`.
-   * Inclui motivo (`decrease` em falha 429/5xx, `increase` em sucesso),
-   * valor anterior e novo.
+   * Emitted when adaptive concurrency changes the `p-queue` limit.
+   * Includes the reason (`decrease` on 429/5xx failure, `increase` on
+   * success), the previous and new values.
    */
   | {
       readonly type: "concurrency-changed";
@@ -95,9 +95,9 @@ function nextId(): string {
 }
 
 export interface EnqueueOptions {
-  /** Override da estimativa de tokens para esta requisição. */
+  /** Token-estimate override for this request. */
   readonly estimatedTokens?: number;
-  /** Prioridade (maior = mais rápida). p-queue suporta priority padrão. */
+  /** Priority (higher = faster). p-queue supports standard priority. */
   readonly priority?: number;
 }
 
@@ -111,8 +111,8 @@ export class AiRequestQueue {
   private readonly estimator: TokenEstimator;
 
   /**
-   * Concorrência adaptativa (AIMD). Ativa só se `adaptiveConcurrency` foi
-   * pedido — altrimenti `current` segue `opts.concurrency` fixo.
+   * Adaptive concurrency (AIMD). Only active if `adaptiveConcurrency` was
+   * requested — otherwise `current` follows `opts.concurrency` fixed.
    */
   private readonly adaptive: boolean;
   private readonly minConcurrency: number;
@@ -120,18 +120,18 @@ export class AiRequestQueue {
   private currentConcurrency: number;
 
   /**
-   * Controla pausas automáticas disparadas por `Retry-After`.
+   * Controls auto-pauses triggered by `Retry-After`.
    *
-   * Invariante: `autoPausedUntil === null` ⇒ não há timeout pendente.
-   * Quando não-null, há um `setTimeout` agendado para retomar a fila em
-   * `autoPausedUntil - Date.now()` ms; esse id está em `autoResumeTimer`.
+   * Invariant: `autoPausedUntil === null` => no pending timer.
+   * When non-null, there's a `setTimeout` scheduled to resume the queue in
+   * `autoPausedUntil - Date.now()` ms; its id is in `autoResumeTimer`.
    */
   private autoPausedUntil: number | null = null;
   private autoResumeTimer: ReturnType<typeof setTimeout> | null = null;
   /**
-   * Verdadeiro quando a pausa foi pedida manualmente via `pause()`.
-   * Nesse caso, a auto-retomada NÃO deve reativar a fila — só `resume()`
-   * manual anula.
+   * True when the pause was requested manually via `pause()`.
+   * In that case, auto-resume MUST NOT reactivate the queue — only a manual
+   * `resume()` cancels it.
    */
   private manualPaused = false;
 
@@ -175,12 +175,12 @@ export class AiRequestQueue {
     return this.queue.size;
   }
 
-  /** Concorrência atual aplicada ao `p-queue`. */
+  /** Current concurrency applied to the `p-queue`. */
   get concurrency(): number {
     return this.currentConcurrency;
   }
 
-  /** Verdadeiro quando a fila está pausada (manual ou automaticamente). */
+  /** True when the queue is paused (manual or automatic). */
   get paused(): boolean {
     return this.queue.isPaused;
   }
@@ -197,19 +197,19 @@ export class AiRequestQueue {
     ) as Promise<RetryExecutorResult<ProviderResponse<T>>>;
   }
 
-  /** Version serializada (JSON-safe) para callbacks simples. */
+  /** Serialized version (JSON-safe) for simple callbacks. */
   onIdle(): Promise<void> {
     return this.queue.onIdle();
   }
 
-  /** Pausa manual da fila. Não pode ser anulada por retentativa auto. */
+  /** Manual pause of the queue. Cannot be cancelled by an auto-retry. */
   pause(): void {
     this.manualPaused = true;
     this.queue.pause();
     this.onEvent({ type: "paused", reason: "manual" });
   }
 
-  /** Retoma a fila (anula pausa manual e eventual auto-pausa pendente). */
+  /** Resumes the queue (cancels manual pause and any pending auto-pause). */
   resume(): void {
     this.clearAutoResume();
     this.autoPausedUntil = null;
@@ -219,13 +219,13 @@ export class AiRequestQueue {
   }
 
   /**
-   * Pausa a fila por `ms` milissegundos em resposta a um `Retry-After`.
+   * Pauses the queue for `ms` milliseconds in response to a `Retry-After`.
    *
-   * - Ignora se houver pausa manual ativa (o usuário mandou ficar parado).
-   * - Se já houver auto-pausa em vigor e o novo prazo for maior, estende;
-   *   se for menor, mantém o prazo atual (evita oscilações).
-   * - O tempo é clamped por `maxAutoPauseMs` para proteção contra header
-   *   mal-formado.
+   * - Ignores if a manual pause is active (the user told it to stay stopped).
+   * - If an auto-pause is already in effect and the new deadline is later,
+   *   extends it; if earlier, keeps the current deadline (avoids oscillation).
+   * - The time is clamped by `maxAutoPauseMs` for protection against a
+   *   malformed header.
    */
   private autoPauseFor(ms: number): void {
     if (this.manualPaused) return;
@@ -265,25 +265,25 @@ export class AiRequestQueue {
   ): Promise<RetryExecutorResult<ProviderResponse<T>>> {
     const started = Date.now();
 
-    // 1a. Estimativa de tokens: prioriza caller > req > estimator (EWMA).
-    //     Se nenhum informou, usa a média calibrada — reflete padrão real.
+    // 1a. Token estimate: prioritize caller > req > estimator (EWMA).
+    //     If none informed, uses the calibrated average — reflects real pattern.
     const explicitTokens = estimatedTokens ?? req.estimatedTokens;
     const tokens =
       explicitTokens !== undefined ? explicitTokens : this.estimator.current().estimate;
 
-    // 1b. Previsão de over-limit ANTES de tentar acquire: alerta a aplicação
-    //     que esta chamada provavelmente espera (rate limiter vai dormir
-    //     até regenerar). Não bloqueia — só observa.
+    // 1b. Predict over-limit BEFORE attempting acquire: alerts the
+    //     application this call will likely wait (rate limiter will sleep
+    //     until regeneration). Non-blocking — only observes.
     this.maybeEmitPredictedOverLimit(id, tokens);
 
-    // 1c. Respeita o rate limiter ANTES de chamar o provedor.
+    // 1c. Respects the rate limiter BEFORE calling the provider.
     const result = await this.rateLimiter.acquire(tokens);
     this.onEvent({ type: "rate-acquired", id, waitedMs: result.waitedMs });
 
-    // 2. Loop de retentativas gerenciado pelo RetryExecutor.
-    //    Envolve a operação para observar cada outcome: se vier `retry` com
-    //    `retryAfterMs`, pausa a fila inteira por esse período antes de
-    //    tentar novamente (alinhamento com Retry-After do provedor).
+    // 2. Retry loop managed by RetryExecutor.
+    //    Wraps the operation to observe each outcome: if a `retry` comes
+    //    with `retryAfterMs`, pauses the whole queue for that period before
+    //    trying again (aligning with the provider's Retry-After).
     const wrapped = async (attemptNumber: number): Promise<RetryOutcome<ProviderResponse<T>>> => {
       if (attemptNumber === 0) {
         this.onEvent({ type: "enqueued", id, path: req.path });
@@ -295,7 +295,7 @@ export class AiRequestQueue {
         if (typeof outcome.retryAfterMs === "number" && outcome.retryAfterMs > 0) {
           this.autoPauseFor(outcome.retryAfterMs);
         }
-        // AIMD: falha 429/5xx desencadeia multiplicative decrease.
+        // AIMD: a 429/5xx failure triggers a multiplicative decrease.
         if (outcome.status === 429 || (typeof outcome.status === "number" && outcome.status >= 500)) {
           this.decreaseConcurrency();
         }
@@ -308,10 +308,10 @@ export class AiRequestQueue {
     try {
       const r = await composed;
       this.syncFromHeaders(r.value.headers);
-      // Alimenta o estimator com o uso real reportado pelo provedor.
+      // Feeds the estimator with the real usage reported by the provider.
       const observed = this.extractUsageTokens(r.value.body);
       if (observed !== undefined) this.estimator.observe(observed);
-      // AIMD: sucesso → additive increase.
+      // AIMD: success -> additive increase.
       this.increaseConcurrency();
       this.onEvent({
         type: "success",
@@ -329,8 +329,8 @@ export class AiRequestQueue {
   }
 
   /**
-   * AIMD Additive Increase.Em cada sucesso, crescemos +1 até o teto.
-   * noop se `adaptive` está desligado.
+   * AIMD Additive Increase. On every success, we grow by +1 up to the
+   * ceiling. noop if `adaptive` is off.
    */
   private increaseConcurrency(): void {
     if (!this.adaptive) return;
@@ -342,8 +342,8 @@ export class AiRequestQueue {
   }
 
   /**
-   * AIMD Multiplicative Decrease. Em cada 429/5xx, divide por 2 (floor).
-   * Não desce abaixo de `minConcurrency`. noop se `adaptive` desligado.
+   * AIMD Multiplicative Decrease. On every 429/5xx, halves (floor).
+   * Never goes below `minConcurrency`. noop if `adaptive` is off.
    */
   private decreaseConcurrency(): void {
     if (!this.adaptive) return;
@@ -356,9 +356,9 @@ export class AiRequestQueue {
   }
 
   /**
-   * Emite `predicted-over-limit` se a estimativa de tokens exceder o TPM
-   * restante reportado pelo rateLimiter. Só funciona quando o limiter é um
-   * `CompositeRateLimiter` (que tem TPM separado); altrimenti é noop.
+   * Emits `predicted-over-limit` if the token estimate exceeds the
+   * remaining TPM reported by the rateLimiter. Only works when the limiter
+   * is a `CompositeRateLimiter` (which has separated TPM); otherwise noop.
    */
   private maybeEmitPredictedOverLimit(id: string, estimatedTokens: number): void {
     if (!(this.rateLimiter instanceof CompositeRateLimiter)) return;
@@ -378,9 +378,9 @@ export class AiRequestQueue {
   }
 
   /**
-   * Extrai `usage.total_tokens` (ou `prompt_tokens + completion_tokens`) do
-   * corpo da resposta. Suporta OpenAI/Anthropic e estruturas análogas.
-   * Retorna `undefined` se o corpo não tiver usage.
+   * Extracts `usage.total_tokens` (or `prompt_tokens + completion_tokens`)
+   * from the response body. Supports OpenAI/Anthropic and analogous
+   * structures. Returns `undefined` if the body has no usage.
    */
   private extractUsageTokens(body: unknown): number | undefined {
     if (body === null || typeof body !== "object") return undefined;
@@ -396,8 +396,8 @@ export class AiRequestQueue {
   }
 
   /**
-   * Sincroniza o `rateLimiter` com headers que o provedor envia em respostas
-   * de sucesso. Suporta as duas convenções comuns:
+   * Syncs the `rateLimiter` with headers the provider sends on success
+   * responses. Supports the two common conventions:
    *
    * - OpenAI: `x-ratelimit-limit-requests`, `x-ratelimit-remaining-requests`,
    *   `x-ratelimit-limit-tokens`, `x-ratelimit-remaining-tokens`.
@@ -406,9 +406,9 @@ export class AiRequestQueue {
    *   `anthropic-ratelimit-tokens-limit`,
    *   `anthropic-ratelimit-tokens-remaining`.
    *
-   * Se um bucket não tiver header correspondente, é deixado inalterado. Se o
-   * `rateLimiter` não for `CompositeRateLimiter`, tenta `sync` genérico com
-   * a soma dos dois limites (fallback razoável mas impreciso).
+   * If a bucket has no corresponding header, it's left unchanged. If the
+   * `rateLimiter` is not a `CompositeRateLimiter`, tries the generic `sync`
+   * with the sum of the two limits (a reasonable but imprecise fallback).
    */
   private syncFromHeaders(headers: Headers): void {
     const rpm = this.readRpmBudget(headers);

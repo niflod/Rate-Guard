@@ -54,15 +54,15 @@ export interface RetryContext {
 export type RetryDelayResolver = (ctx: RetryContext, opts?: BackoffOptions) => number;
 
 /**
- * Calcula o backoff exponencial com "equal jitter":
+ * Computes exponential backoff with "equal jitter":
  *
  *   delay = cap/2 + random(0, cap/2)
  *
- * onde cap = min(baseBackoffMs * 2^attempt, maxBackoffMs).
+ * where cap = min(baseBackoffMs * 2^attempt, maxBackoffMs).
  *
- * - dobra a base a cada tentativa (1s, 2s, 4s, 8s, 16s...)
- * - jitter evita thundering herd (retentativas sincronizadas)
- * - cap (maxBackoffMs) limita o teto
+ * - doubles the base on every attempt (1s, 2s, 4s, 8s, 16s...)
+ * - jitter avoids the thundering herd (synchronized retries)
+ * - cap (maxBackoffMs) limits the ceiling
  *
  * @see https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
  */
@@ -78,7 +78,7 @@ export function exponentialBackoffWithJitter(
   return Math.min(maxBackoffMs, Math.round(half + jitter));
 }
 
-/** Jitter "full" puro — dispersão uniforme entre 0 e o backoff exponencial. */
+/** Pure "full" jitter — uniform dispersion between 0 and the exponential backoff. */
 export function fullJitterBackoff(
   ctx: RetryContext,
   opts: BackoffOptions = defaultBackoffOptions,
@@ -100,7 +100,7 @@ export type RetryOutcome<T> =
       readonly kind: "retry";
       readonly status?: number;
       readonly reason: string;
-      /** Opcional: tirado do header Retry-After do provedor. */
+      /** Optional: pulled from the provider's Retry-After header. */
       readonly retryAfterMs?: number;
       readonly retryable?: boolean;
     };
@@ -147,13 +147,13 @@ export class RetryExecutor {
         retryableFlag === true || (status !== undefined && isRetryableStatus(status));
       if (!isRetryable) {
         throw new NonRetryableError(
-          `Erro não recuperável (status=${status ?? "n/a"}): ${outcome.reason}`,
+          `Non-retryable error (status=${status ?? "n/a"}): ${outcome.reason}`,
           status,
         );
       }
       if (attempt >= this.opts.maxRetries) {
         throw new MaxRetriesExceededError(
-          `Máximo de retentativas (${this.opts.maxRetries}) excedido (status=${status ?? "n/a"}): ${outcome.reason}`,
+          `Max retries (${this.opts.maxRetries}) exceeded (status=${status ?? "n/a"}): ${outcome.reason}`,
           status,
         );
       }

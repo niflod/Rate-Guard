@@ -1,5 +1,7 @@
 # Arquitetura
 
+> Languages: [Português](./ARCHITECTURE.md) • [English](./ARCHITECTURE.en.md)
+
 Este documento explica em profundidade as decisões por trás do `rate-guard`.
 Para a referência de API, veja [`API.md`](./API.md).
 

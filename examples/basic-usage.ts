@@ -32,7 +32,7 @@ const mockFetch: typeof fetch = async (_input, _init?) => {
 };
 
 const provider = new DefaultProviderClient({
-  baseUrl: "https://api.exemplo.com/v1",
+  baseUrl: "https://api.example.com/v1",
   apiKey: "fake-key",
   fetchFn: mockFetch,
 });
@@ -75,7 +75,7 @@ const queue = new AiRequestQueue({
 
 const body = JSON.stringify({
   model: "gpt-4o-mini",
-  messages: [{ role: "user", content: "Oi" }],
+  messages: [{ role: "user", content: "Hi" }],
 });
 
 const result = await queue.enqueue({
@@ -89,7 +89,7 @@ console.log("FINAL:", JSON.stringify(result.value.body, null, 2));
 console.log(`attempts=${result.attempts}`);
 
 const rpmBudget = rateLimiter.available();
-console.log(`[sync] ratio=${rpmBudget.remaining.toFixed(3)} (RPM dominante após sync)`);
+console.log(`[sync] ratio=${rpmBudget.remaining.toFixed(3)} (RPM dominant after sync)`);
 const cast = rateLimiter as unknown as {
   rpm: { available(): { remaining: number; capacity: number } };
   tpm: { available(): { remaining: number; capacity: number } };

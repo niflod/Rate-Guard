@@ -1,5 +1,7 @@
 # Contribuindo para o rate-guard
 
+> Languages: [Português](./CONTRIBUTING.md) • [English](./CONTRIBUTING.en.md)
+
 Obrigado pelo interesse em contribuir! Este documento descreve o processo.
 
 ## Setup do ambiente

@@ -1,5 +1,7 @@
 # Exemplos
 
+> Languages: [Português](./README.md) • [English](./README.en.md)
+
 Exemplos funcionais para começar rápido com `rate-guard`.
 
 ## Conteúdo

@@ -9,7 +9,7 @@ function makeResponse(status: number, body: unknown, headers: Record<string, str
   });
 }
 
-test("client classifica 429 como retryable e lê Retry-After", async () => {
+test("client classifies 429 as retryable and reads Retry-After", async () => {
   let calls = 0;
   const fetchFn: typeof fetch = async () => {
     calls++;
@@ -28,7 +28,7 @@ test("client classifica 429 como retryable e lê Retry-After", async () => {
   assert.equal(r2.kind, "success");
 });
 
-test("client classifica 400 como não-retryable", async () => {
+test("client classifies 400 as non-retryable", async () => {
   const fetchFn: typeof fetch = async () => makeResponse(400, { error: "bad" });
   const client = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", fetchFn });
   const r = await client.call({ path: "/p" });
@@ -36,14 +36,14 @@ test("client classifica 400 como não-retryable", async () => {
   if (r.kind === "retry") assert.equal(r.retryable, false);
 });
 
-test("client classifica 500 como retryable", async () => {
+test("client classifies 500 as retryable", async () => {
   const fetchFn: typeof fetch = async () => makeResponse(503, { error: "boom" });
   const client = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", fetchFn });
   const r = await client.call({ path: "/p" });
   if (r.kind === "retry") assert.equal(r.retryable, true);
 });
 
-test("client trata erro de rede como retryable", async () => {
+test("client treats network error as retryable", async () => {
   const fetchFn: typeof fetch = async () => {
     throw new Error("ECONNRESET");
   };
