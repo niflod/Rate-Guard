@@ -1,30 +1,32 @@
-## Descrição
+> Languages: [English](./PULL_REQUEST_TEMPLATE.md) • [Português](./PULL_REQUEST_TEMPLATE.pt-BR.md)
 
-<!-- Descreva as mudanças -->
+## Description
 
-## Tipo de mudança
+<!-- Describe the changes -->
 
-- [ ] Bug fix (non-breaking change que corrige um problema)
-- [ ] Nova feature (non-breaking change que adiciona funcionalidade)
-- [ ] Breaking change (fix ou feature que quebraria API existente)
-- [ ] Documentação
-- [ ] Refatoração / chore
+## Type of change
 
-## Testes
+- [ ] Bug fix (non-breaking change that fixes an issue)
+- [ ] New feature (non-breaking change that adds functionality)
+- [ ] Breaking change (fix or feature that would break existing API)
+- [ ] Documentation
+- [ ] Refactor / chore
 
-- [ ] Adicionei testes que cobrem as mudanças
-- [ ] Todos os testes passam (`npm test`)
-- [ ] `npm run typecheck` passa
-- [ ] `npm run lint` passa
+## Tests
+
+- [ ] I added tests covering the changes
+- [ ] All tests pass (`npm test`)
+- [ ] `npm run typecheck` passes
+- [ ] `npm run lint` passes
 
 ## Checklist
 
-- [ ] Código segue o estilo do projeto
-- [ ] Self-review feito
-- [ ] Documentação atualizada (README / docs/*)
-- [ ] CHANGELOG.md atualizado em `[Unreleased]`
-- [ ] Sem `console.log` em `src/` (apenas `examples/`)
+- [ ] Code follows project style
+- [ ] Self-review done
+- [ ] Documentation updated (README / docs/*)
+- [ ] CHANGELOG.md updated in `[Unreleased]`
+- [ ] No `console.log` in `src/` (only in `examples/`)
 
-## Referência à issue
+## Issue reference
 
-Closes #<!-- número da issue -->
+Closes #<!-- issue number -->

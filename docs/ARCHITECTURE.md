@@ -1,11 +1,11 @@
-# Arquitetura
+# Architecture
 
-> Languages: [Português](./ARCHITECTURE.md) • [English](./ARCHITECTURE.en.md)
+> Languages: [English](./ARCHITECTURE.md) • [Português](./ARCHITECTURE.pt-BR.md)
 
-Este documento explica em profundidade as decisões por trás do `rate-guard`.
-Para a referência de API, veja [`API.md`](./API.md).
+This document explains in depth the decisions behind `rate-guard`.
+For the API reference, see [`API.md`](./API.md).
 
-## Visão de sistema
+## System overview
 
 ```
                           ┌──────────────────────────────────────────────────┐
@@ -16,7 +16,7 @@ user action ──enqueue──➤  │  ┌─────────┐   ┌
                           │  │         │  │ tokens   │  │   + backoff │  │
                           │  │         │  │ +        │  │   + Retry-  │  │  ──provider.call(POST /chat) ──➤
                           │  │         │  │ syncHea- │  │   After     │  │                                  │
-                          │  │         │  │ ders     │  │   + AIMD    │  │  ◀── resposta 200/429/5xx ◀────  │
+                          │  │         │  │ ders     │  │   + AIMD    │  │  ◀── response 200/429/5xx ◀────  │
                           │  │         │  │ + predi- │  │             │  │                                  │
                           │  │         │  │ ct-over- │  │             │  │                                  │
                           │  │         │  │ limit    │  │             │  │                                  │
@@ -29,11 +29,11 @@ user action ──enqueue──➤  │  ┌─────────┐   ┌
                           └──────────────────────────────────────────────────┘
 ```
 
-## Grafo de dependências interna
+## Internal dependency graph
 
 ```
 src/index.ts (barrel)
-├── src/config/index.ts        (autônomo: lê process.env)
+├── src/config/index.ts        (autonomous: reads process.env)
 ├── src/queue/ai-request-queue.ts
 │   ├── p-queue (npm)
 │   ├── src/provider/provider-client.ts
@@ -44,18 +44,18 @@ src/index.ts (barrel)
 │   │   └── (stdlib)
 │   └── src/retry/backoff.ts
 │       └── (stdlib)
-└── (re-exports dos módulos acima + ProviderClient/Request/Response)
+└── (re-exports of the modules above + ProviderClient/Request/Response)
 ```
 
-Ciclo: nenhuma dependência circular. `provider-client` só conhece tipos de
-`retry/backoff`; `rate-limiter/*` não conhece nada exceto stdlib.
+Cycle: no circular dependencies. `provider-client` only knows types from
+`retry/backoff`; `rate-limiter/*` knows nothing but the stdlib.
 
-## Mecanismos em profundidade
+## Mechanisms in depth
 
-### #0 Token bucket contínuo (RPM + TPM)
+### #0 Continuous token bucket (RPM + TPM)
 
-`ContinuousBucket` é "leaky bucket" e não "fixed window". Regenera tokens
-**continuamente** proporcional ao tempo decorrido:
+`ContinuousBucket` is a "leaky bucket", not a "fixed window". It regenerates
+tokens **continuously**, proportional to elapsed time:
 
 ```typescript
 refillRatePerMs = capacity / intervalMs
@@ -63,13 +63,13 @@ added = elapsed * refillRatePerMs
 tokens = min(capacity, tokens + added)
 ```
 
-Vantagem:
+Benefits:
 
-- Suaviza bursts (ex.: permite 60 req em 1s no início, mas depois regenera
-  1 req/1s se a `capacity` é 60/minuto).
-- Sem `setInterval` — só calcula no momento do `acquire`/`available`.
+- Smooths bursts (e.g. allows 60 requests in 1s up front, then regenerates
+  1 req/1s if `capacity` is 60/min).
+- No `setInterval` — only computes at `acquire`/`available` time.
 
-`CompositeRateLimiter.acquire(cost)` faz:
+`CompositeRateLimiter.acquire(cost)` does:
 
 ```
 rRpm = await rpm.acquire(1)
@@ -77,143 +77,143 @@ rTpm = await tpm.acquire(cost)
 waitedMs = rRpm.waitedMs + rTpm.waitedMs
 ```
 
-Adquire RPM primeiro (mais barato), TPM depois. Se ambos `waited`, soma.
+It acquires RPM first (cheaper), then TPM. If both `waited`, it sums them.
 
-### #1 Sync de headers em runtime
+### #1 Header sync at runtime
 
-Após um sucesso, lê-se headers e chamamos `syncRpmTpm(rpm, tpm)`:
+After a success, headers are parsed and `syncRpmTpm(rpm, tpm)` is called:
 ```typescript
 sync(remaining, capacity) {
-  this.capacity = capacity;  // reajusta
+  this.capacity = capacity;  // readjusts
   this.tokens = min(capacity, max(0, remaining));
-  this.lastRefill = now();    // zera regeneração — não inflar no próximo tick
+  this.lastRefill = now();    // resets regeneration — don't inflate on next tick
 }
 ```
 
-Por que isso importa?
+Why this matters:
 
-- O provedor anuncia quando de fato falta — não precisamos adivinhar.
-- Se a `capacity` mudou (conta promovida), o bucket segue o novo teto.
-- Zerar o relógio evita somar regeneração "de tempo que não existiu".
+- The provider announces what's actually left — we don't have to guess.
+- If `capacity` changed (promoted account), the bucket follows the new ceiling.
+- Resetting the clock avoids adding regeneration "for time that didn't exist".
 
-### #2 Pausa automática em Retry-After
+### #2 Automatic pause on Retry-After
 
 `autoPauseFor(ms)`:
 
-1. Ignora se `manualPaused` (usuário pediu pausar).
-2. `clearTimeout(autoResumeTimer)` para escalar (não acumular timers).
-3. `queue.pause()` — todos itens (já em voo + aguardando) param.
-4. `setTimeout(()=>queue.start(), ms)` com `.unref()` (não segura o processo
-   Node em shutdown).
-5. Emite `paused { reason: "auto", untilMs, durationMs }`.
+1. Ignores if `manualPaused` (user asked to pause).
+2. `clearTimeout(autoResumeTimer)` for scale (don't accumulate timers).
+3. `queue.pause()` — all items (in flight + waiting) stop.
+4. `setTimeout(()=>queue.start(), ms)` with `.unref()` (doesn't hold the
+   Node process on shutdown).
+5. Emits `paused { reason: "auto", untilMs, durationMs }`.
 
-Invariante: `autoPausedUntil !== null` implica existe 1 timer pendente.
+Invariant: `autoPausedUntil !== null` implies there is 1 pending timer.
 
-Por que pausa **toda** a fila?
+Why pause the **whole** queue?
 
-- A request X acabou de tomar 429. Y está em voo? Provavelmente já falhou
-  também (provedor delimita por segundo).
-- O que está aguardando na fila — se a fila ignorar e dispara X' imediatamente,
-  virtualmente vocês garantem outro 429 — que outro `Retry-After` —- e assim
-  entra em cascata.
-- Pausar **tudo** pelo tempo exato do `Retry-After` é a interpretação
-  literal do que o provedor pediu.
+- Request X just got 429. Y is in flight? Probably already failing too
+  (provider rates per second).
+- What's waiting in the queue — if the queue ignored that and fired X'
+  immediately, you'd virtually guarantee another 429 — another `Retry-After`
+  — and so it cascades.
+- Pausing **everything** for the exact time in `Retry-After` is the literal
+  interpretation of what the provider asked.
 
 ### #3 EWMA calibration (TokenEstimator)
 
-`next = alpha * sample + (1 - alpha) * previous`, com `alpha = 0.3` default.
+`next = alpha * sample + (1 - alpha) * previous`, with `alpha = 0.3` default.
 
-- Primeiro sample real substitui o initial 1000 — não suaviza contra um
-  marcador sintético.
-- Rejeita 0/negativo/NaN/Infinity (samples inválidos).
-- Clamp a `maxEstimate = 1_000_000` para evitar runaway.
+- First real sample replaces the initial 1000 — no smoothing against a
+  synthetic marker.
+- Rejects 0/negative/NaN/Infinity (invalid samples).
+- Clamps to `maxEstimate = 1_000_000` to avoid runaway.
 
-Por que EWMA e não média simples?
+Why EWMA and not a simple average?
 
-- O(1) memória (sem armazenar histórico).
-- Reage em 3-5 amostras a uma mudança de padrão.
-- Resistente a outliers (single spike não domina).
+- O(1) memory (no history kept).
+- Reacts in 3-5 samples to a pattern change.
+- Resistant to outliers (single spike doesn't dominate).
 
-Quando emitir `predicted-over-limit`: **antes** de `acquire`. A fila ainda
-tenta, mas o consumidor pode alertar — útil para SLO/SLA "previsão de jlong".
+When to emit `predicted-over-limit`: **before** `acquire`. The queue still
+tries, but the consumer can alert — useful for SLO/SLA "long-jam prediction".
 
-### #4 Backoff exponencial + jitter
+### #4 Exponential backoff + jitter
 
-`exponentialBackoffWithJitter` (equal jitter — strategy de AWS):
+`exponentialBackoffWithJitter` (equal jitter — AWS strategy):
 
 ```
 cap = min(baseBackoffMs * 2^attempt, maxBackoffMs)
 delay = cap/2 + random(0, cap/2)
 ```
 
-- `2^attempt` dobra a cada retry (1s, 2s, 4s, 8s, 16s, 32s, then capped em 60s).
-- `cap/2` como base + `random(0, cap/2)` como jitter dispersa as retentativas.
-- `Retry-After` do provedor tem precedência quando fornecido.
+- `2^attempt` doubles every retry (1s, 2s, 4s, 8s, 16s, 32s, then capped at 60s).
+- `cap/2` as base + `random(0, cap/2)` as jitter disperses retries.
+- `Retry-After` from the provider takes precedence when provided.
 
-Defaults novos: `maxRetries: 8`, `maxBackoffMs: 60_000`.
+New defaults: `maxRetries: 8`, `maxBackoffMs: 60_000`.
 
-Backoff total máximo: `1+2+4+8+16+32+60+60 = 183s` ≈ 3 minutos. Isto cobre
-janelas de queda prolongada do provedor (1-3 min) que não eram cobertas
-pelos defaults anteriores (5/30s = ~63s máximo).
+Maximum total backoff: `1+2+4+8+16+32+60+60 = 183s` ≈ 3 minutes. This covers
+prolonged provider-out windows (1-3 min) that the previous defaults (5/30s =
+~63s max) didn't cover.
 
-### #5 Margem de segurança 0.8× (default)
+### #5 Safety margin 0.8× (default)
 
-`withSafetyMargin(rpm, tpm, margin)` aplica `Math.floor(rpm * margin)` com
+`withSafetyMargin(rpm, tpm, margin)` applies `Math.floor(rpm * margin)` with
 clamp `>= 1`.
 
-Por que operar em 80% do teto?
+Why operate at 80% of the ceiling?
 
-- O provedor está sujeito a variações internas (picos de vizinhos ruídosos,
-  quotas concorrentes dentro da conta).
-- Manter 20% margem absorve essas flutuações sem rejeitar suas requests —
-  ao custo de throughput marginal (~5% em steady state).
-- `safetyMargin = 1.0` desativa (operador quer o limite cheio).
+- The provider is subject to internal variation (noisy-neighbor spikes,
+  competing quotas within the account).
+- Keeping a 20% margin absorbs these fluctuations without rejecting your
+  requests — at the cost of marginal throughput (~5% in steady state).
+- `safetyMargin = 1.0` disables it (operator wants the full limit).
 
 ### #6 AIMD (Additive Increase / Multiplicative Decrease)
 
-Algoritmo clássico do TCP. Adaptado para concorrência de requests:
+Classic TCP algorithm. Adapted for request concurrency:
 
-- **Decrease (em 429/5xx)**: `concurrency = max(min, floor(c / 2))`.
-  - Divide por 2 — recupera rápido de uma queda de capacidade.
-  - Vários 429s em sequência: 8 → 4 → 2 → 1 em 3 falhas.
-- **Increase (em sucesso)**: `concurrency = min(max, c + 1)`.
-  - Soma 1 — sobe devagar, evita ofender o provedor novamente.
-  - Em steady estado, demora `max - min` sucessos para chegar ao teto.
-- Limites: `minConcurrency = 1` (default), `maxConcurrency = 8` (default).
+- **Decrease (on 429/5xx)**: `concurrency = max(min, floor(c / 2))`.
+  - Halves — recovers quickly from a capacity drop.
+  - Several 429s in a row: 8 → 4 → 2 → 1 in 3 failures.
+- **Increase (on success)**: `concurrency = min(max, c + 1)`.
+  - Adds 1 — ramps up slowly, avoids offending the provider again.
+  - In steady state, it takes `max - min` successes to reach the ceiling.
+- Limits: `minConcurrency = 1` (default), `maxConcurrency = 8` (default).
 
-Por que não só backoff?
+Why not just backoff?
 
-- Backoff trata 1 chamada. AIMD trata o **volume** que está ofendendo o
-  provedor. São complementares: AIMD reduz janela, backoff trata a chamada
-  que falhou.
+- Backoff handles 1 call. AIMD handles the **volume** that's offending the
+  provider. They are complementary: AIMD shrinks the window, backoff handles
+  the failed call.
 
-Por que AIMD é opt-in?
+Why is AIMD opt-in?
 
-- Em muitas cargas, o bucket já resolve — AIMD é overhead.
-- Em cargas onde o provedor limita por concorrência (não por RPM/TPM), AIMD
-  é essencial.
+- For many loads, the bucket already solves it — AIMD is overhead.
+- For loads where the provider limits by concurrency (not by RPM/TPM), AIMD
+  is essential.
 
-## Invariante de estado
+## State invariant
 
-A combinação dos mecanismos oferece estas propriedades juntas:
+The combination of mechanisms offers these properties together:
 
-1. **Não dispara para depois** — bucket pré-acquire na fila (vs. tentar e esperar 429).
-2. **Alinha-se ao provedor em runtime** — sync + Retry-After + AIMD.
-3. **Aprende com uso real** — EWMA calibration de tokens.
-4. **Escapa de situações instáveis** — backoff + AIMD + pausa em Retry-After.
-5. **Observável** — 9 tipos de evento via `onEvent`.
+1. **Doesn't fire-and-then-handle** — pre-acquire bucket at the queue (vs. try and wait for 429).
+2. **Aligns with the provider at runtime** — sync + Retry-After + AIMD.
+3. **Learns from real usage** — EWMA token calibration.
+4. **Escapes unstable situations** — backoff + AIMD + Retry-After pause.
+5. **Observable** — 9 event types via `onEvent`.
 
-## Análise de custo/benefício
+## Cost/benefit analysis
 
-| Mecanismo | CPU overhead | Latência adicionada | Redução de 429 esperada |
+| Mechanism | CPU overhead | Added latency | Expected 429 reduction |
 |---|---|---|---|
-| #0 token bucket | trivial (1 mult + 1 min por req) | 0 quando há saldo | alta |
-| #1 sync headers | trivial (parse headers) | 0 | média-alta |
-| #2 pause | 1 setTimeout + 1 clearTimeout | retryAfterMs (~ms-s) | alta |
-| #3 EWMA | 1 mult + 1 soma por sucesso | 0 | média |
-| #4 backoff | apenas em falha | backoff (segundos) | alta quando falha |
-| #5 margem 0.8× | 0 | 0 | média |
-| #6 AIMD | 1 aritmética por resultado | 0 | alta em concorrência |
+| #0 token bucket | trivial (1 mult + 1 min per req) | 0 when there's budget | high |
+| #1 header sync | trivial (parse headers) | 0 | medium-high |
+| #2 pause | 1 setTimeout + 1 clearTimeout | retryAfterMs (~ms-s) | high |
+| #3 EWMA | 1 mult + 1 sum per success | 0 | medium |
+| #4 backoff | only on failure | backoff (seconds) | high on failure |
+| #5 margin 0.8× | 0 | 0 | medium |
+| #6 AIMD | 1 arithmetic per outcome | 0 | high on concurrency |
 
-Total overhead em caminho de sucesso: < 1ms por req. Benefício:
-eliminação virtual de 429 evitáveis em padrões realistas.
+Total overhead on the success path: < 1ms per req. Benefit: virtual
+elimination of avoidable 429s under realistic patterns.

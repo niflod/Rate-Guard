@@ -6,20 +6,20 @@ labels: ["enhancement"]
 assignees: ""
 ---
 
-> Languages: [Português](./feature-request.md) • [English](./feature-request.en.md)
+> Languages: [English](./feature-request.md) • [Português](./feature-request.pt-BR.md)
 
-## Problema que resolve
+## Problem it solves
 
-Descreva o problema que esta feature resolveria.
+Describe the problem this feature would solve.
 
-## Solução proposta
+## Proposed solution
 
-Descreva como você gostaria que funcionasse.
+Describe how you'd like it to work.
 
-## Alternativas consideradas
+## Alternatives considered
 
-Outras abordagens que você pensou.
+Other approaches you considered.
 
-## Contexto adicional
+## Additional context
 
-Qualquer outra informação relevante.
+Any other relevant information.

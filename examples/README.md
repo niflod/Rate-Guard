@@ -1,33 +1,34 @@
-# Exemplos
+# Examples
 
-> Languages: [Português](./README.md) • [English](./README.en.md)
+> Languages: [English](./README.md) • [Português](./README.pt-BR.md)
 
-Exemplos funcionais para começar rápido com `rate-guard`.
+Working examples to get started quickly with `rate-guard`.
 
-## Conteúdo
+## Contents
 
-| Exemplo | Descrição | Pré-requisitos |
+| Example | Description | Prerequisites |
 |---|---|---|
-| [`basic-usage.ts`](./basic-usage.ts) | Mock fetch que simula 429 duas vezes e depois sucesso. Demonstra pausa em `Retry-After`, sync de headers, EWMA estimator, AIMD. | Nenhum — roda isolado com fetch mockado. |
-| [`openai-integration.ts`](./openai-integration.ts) | Integração real com a API da OpenAI. Dispara 3 prompts em paralelo, exibe respostas + telemetria final (concurrency, tokens, AIMD). | `OPENAI_API_KEY` no env. **Custa créditos.** |
+| [`basic-usage.ts`](./basic-usage.ts) | Mock fetch that simulates 429 twice and then success. Demonstrates pause on `Retry-After`, header sync, EWMA estimator, AIMD. | None — runs isolated with mocked fetch. |
+| [`openai-integration.ts`](./openai-integration.ts) | Real integration with the OpenAI API. Fires 3 prompts in parallel, shows responses + final telemetry (concurrency, tokens, AIMD). | `OPENAI_API_KEY` in env. **Costs credits.** |
 
-## Rodar
+## Run
 
 ```bash
-# Clone o repo, instale deps:
+# Clone the repo, install deps:
 npm install
 
-# Exemplo isolado (sem custo):
+# Isolated example (no cost):
 npx tsx examples/basic-usage.ts
 
-# Exemplo OpenAI (custa créditos):
+# OpenAI example (costs credits):
 OPENAI_API_KEY=sk-... npx tsx examples/openai-integration.ts
 ```
 
-## O que observar no output
+## What to watch in the output
 
-- `paused` / `resumed`: automação em resposta ao `Retry-After`.
-- `sync rpm={...}` / `sync tpm={...}`: bucket realinhado com oprovedor.
-- `[estimator]`: EWMA calibrada a partir do `usage.total_tokens`.
-- `[concurrency] N→M`: AIMD (decrease em falha, increase em sucesso).
-- `predicted-over-limit`: estimativa excede o TPM remanescente — próximo chamado provavelmente vai esperar.
+- `paused` / `resumed`: automation in response to `Retry-After`.
+- `sync rpm={...}` / `sync tpm={...}`: bucket realigned with the provider.
+- `[estimator]`: EWMA calibrated from `usage.total_tokens`.
+- `[concurrency] N→M`: AIMD (decrease on failure, increase on success).
+- `predicted-over-limit`: estimate exceeds the remaining TPM — the next call
+  will likely wait.

@@ -6,34 +6,34 @@ labels: ["bug"]
 assignees: ""
 ---
 
-> Languages: [Português](./bug-report.md) • [English](./bug-report.en.md)
+> Languages: [English](./bug-report.md) • [Português](./bug-report.pt-BR.md)
 
-## Descrição do bug
+## Bug description
 
-Descreva claramente o que aconteceu.
+Clearly describe what happened.
 
-## Passos para reproduzir
+## Steps to reproduce
 
-1. Vá para '...'
-2. Clique em '...'
-3. Scroll para '...'
-4. Veja o erro
+1. Go to '...'
+2. Click on '...'
+3. Scroll down to '...'
+4. See the error
 
-## Comportamento esperado
+## Expected behavior
 
-O que você esperava que acontecesse.
+What you expected to happen.
 
 ## Screenshots / Logs
 
-Se aplicável, adicione screenshots ou logs do erro.
+If applicable, add screenshots or logs of the error.
 
-## Ambiente
+## Environment
 
-- OS: [ex.: Ubuntu 22.04]
-- Node version: [ex.: 20.15.0]
-- rate-guard version: [ex.: 0.1.0]
+- OS: [e.g. Ubuntu 22.04]
+- Node version: [e.g. 20.15.0]
+- rate-guard version: [e.g. 0.1.0]
 - Provider: [OpenAI / Anthropic / Custom]
 
-## Contexto adicional
+## Additional context
 
-Qualquer outra informação relevante.
+Any other relevant information.

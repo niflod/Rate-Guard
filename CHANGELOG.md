@@ -1,111 +1,117 @@
 # Changelog
 
-> Languages: [Português](./CHANGELOG.md) • [English](./CHANGELOG.en.md)
+> Languages: [English](./CHANGELOG.md) • [Português](./CHANGELOG.pt-BR.md)
 
-Todos os mudanças notáveis do projeto `rate-guard` serão documentados neste arquivo.
+All notable changes to the `rate-guard` project will be documented in this
+file.
 
-O formato é baseado em [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-e este projeto segue [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
 ## [0.1.0] - 2026-08-13
 
-Initial release. Engine de fila in-memory com 5 mecanismos combinados para
-eliminar erros `429 Too Many Requests` provedores de IA — sem Redis, sem
-BullMQ, sem build step obrigatório (consumidor roda via `tsx` ou compila).
+Initial release. In-memory queue engine combining 5 mechanisms to eliminate
+`429 Too Many Requests` errors from AI providers — without Redis, without
+BullMQ, without a mandatory build step (consumer runs via `tsx` or compiles).
 
-### Adicionado
+### Added
 
-- **Token Bucket contínuo (RPM + TPM, juntos)** — `ContinuousBucket` no
-  módulo `rate-limiter/token-bucket.ts`. Regenera tokens proporcionalmente
-  ao tempo decorrido, suavizando do limite. `CompositeRateLimiter` adquire
-  RPM = 1 e TPM = `cost` em sequência, respeitando o eixo mais restritivo.
+- **Continuous Token Bucket (RPM + TPM, together)** — `ContinuousBucket` in
+  the `rate-limiter/token-bucket.ts` module. Regenerates tokens
+  proportionally to elapsed time, smoothing the limit. `CompositeRateLimiter`
+  acquires RPM = 1 and TPM = `cost` in sequence, respecting the most
+  restrictive axis.
 
-- **#1 — Sincronização do bucket via headers do provedor em sucesso** — a
-  fila lê os headers `x-ratelimit-*` (convenção OpenAI) e
-  `anthropic-ratelimit-*` (convenção Anthropic) em cada resposta de sucesso
-  e realinha o `CompositeRateLimiter` via `syncRpmTpm(rpm, tpm)`. Elimina o
-  drift acumulado entre nossa estimativa e o limite real do provedor em
-  runtime (quota upgrade, janela de pico, etc.).
+- **#1 — Bucket synchronization via provider headers on success** — the
+  queue reads `x-ratelimit-*` headers (OpenAI convention) and
+  `anthropic-ratelimit-*` headers (Anthropic convention) on every success
+  response and realigns the `CompositeRateLimiter` via
+  `syncRpmTpm(rpm, tpm)`. Eliminates accumulated drift between our estimate
+  and the provider's real limit at runtime (quota upgrade, peak window,
+  etc.).
 
-- **#2 — Pausa automática da fila inteira em `Retry-After`** — quando um 429
-  chega com `Retry-After: <segundos>`, todos os itens da fila aguardam (não
-  apenas o que falhou), porque disparar a próxima request imediatamente
-  resultaria em outro 429. Implementado com `queue.pause()` + `setTimeout`
-  (`unref`'d). Pausa manual via `pause()` bloqueia a auto-retomada. Teto
-  `maxAutoPauseMs` (default 60s) protege contra header mal-formado.
+- **#2 — Whole-queue automatic pause on `Retry-After`** — when a 429 arrives
+  with `Retry-After: <seconds>`, every queued item waits (not just the one
+  that failed), because firing the next request immediately would result in
+  another 429. Implemented with `queue.pause()` + `setTimeout` (`unref`'d).
+  Manual pause via `pause()` blocks the auto-resume. The `maxAutoPauseMs`
+  ceiling (default 60s) protects against malformed headers.
 
-- **#3 — Calibração da estimativa de tokens via EWMA** — `TokenEstimator`
-  (módulo `rate-limiter/token-estimator.ts`) aprende com
-  `usage.total_tokens`/`prompt_tokens + completion_tokens` das respostas de
-  sucesso. Estimativa default passa a ser a média calibrada, não um número
-  fixo. Evento `predicted-over-limit` é emitido antes de `acquire` quando a
-  estimativa excede o TPM remanescente — útil para SLO/SLA monitoring.
+- **#3 — Token-estimate calibration via EWMA** — `TokenEstimator`
+  (`rate-limiter/token-estimator.ts` module) learns from
+  `usage.total_tokens` / `prompt_tokens + completion_tokens` on success
+  responses. The default estimate becomes the calibrated moving average,
+  not a fixed number. The `predicted-over-limit` event is emitted before
+  `acquire` when the estimate exceeds the remaining TPM — useful for
+  SLO/SLA monitoring.
 
-- **#4 — Backoff mais agressivo** — defaults: `maxRetries: 8`,
-  `maxBackoffMs: 60_000` (era 5/30s). Janela de recuperação máxima ~5min
-  contra quedas prolongadas do provedor. Overridável via `opts.backoff` ou
-  env vars `MAX_RETRIES`/`MAX_BACKOFF_MS`.
+- **#4 — More aggressive backoff** — defaults: `maxRetries: 8`,
+  `maxBackoffMs: 60_000` (was 5/30s). Maximum recovery window ~5min
+  against prolonged provider outages. Overridable via `opts.backoff` or
+  env vars `MAX_RETRIES` / `MAX_BACKOFF_MS`.
 
-- **#5 — Margem de segurança 0.8× no bucket default** — quando a fila
-  constrói o `CompositeRateLimiter` default, aplica `withSafetyMargin(500,
-  90_000, 0.8)` → 400 RPM / 72 k TPM. Operar em 80% do teto absorve
-  janelas de pico do provedor sem rejeitar suas requests. Configurável via
-  `opts.safetyMargin` ou `SAFETY_MARGIN` env (0.01–1.0).
+- **#5 — Safety margin 0.8× on the default bucket** — when the queue builds
+  the default `CompositeRateLimiter`, it applies
+  `withSafetyMargin(500, 90_000, 0.8)` → 400 RPM / 72 k TPM. Operating at
+  80% of the ceiling absorbs provider peak windows without rejecting your
+  requests. Configurable via `opts.safetyMargin` or the `SAFETY_MARGIN` env
+  var (0.01–1.0).
 
-- **#6 — Concorrência adaptativa (AIMD)** — `opts.adaptiveConcurrency:
-  true` (default false) ativa Additive Increase / Multiplicative
-  Decrease. Em 429/5xx: `concurrency = max(min, floor(c / 2))`; em sucesso:
-  `concurrency = min(max, c + 1)`. Limites via `maxConcurrency` /
-  `minConcurrency`. Evento `concurrency-changed` com `{ reason, from, to }`
-  em toda mudança.
+- **#6 — Adaptive concurrency (AIMD)** — `opts.adaptiveConcurrency: true`
+  (default false) activates Additive Increase / Multiplicative Decrease. On
+  429/5xx: `concurrency = max(min, floor(c / 2))`; on success:
+  `concurrency = min(max, c + 1)`. Limits via `maxConcurrency` /
+  `minConcurrency`. A `concurrency-changed` event with `{ reason, from, to }`
+  is emitted on every change.
 
-- **`DefaultProviderClient`** — wrapper de `fetch` que classifica 429/5xx
-  como recuperável, 4xx (≠429) como não-recuperável, e parseia cabeçalho
-  `Retry-After` (em segundos ou HTTP-date). Erro de rede/DNS =
-  recuperável.
+- **`DefaultProviderClient`** — `fetch` wrapper that classifies 429/5xx as
+  retryable, 4xx (other than 429) as non-retryable, and parses the
+  `Retry-After` header (in seconds or HTTP-date). Network/DNS error =
+  retryable.
 
-- **`RetryExecutor`** —-generic executor com backoff exponencial + jitter
-  ("equal jitter" como default, "full jitter" disponível). Respeita
-  `Retry-After` quando fornecido. Erros tipados:
+- **`RetryExecutor`** — generic executor with exponential backoff + jitter
+  ("equal jitter" as default, "full jitter" available). Respects
+  `Retry-After` when provided. Typed errors:
   `NonRetryableError`, `MaxRetriesExceededError`.
 
-- **`loadConfig()`** — carrega todos os parâmetros via `process.env` com
-  defaults sensatos (ver `.env.example`).
+- **`loadConfig()`** — loads all parameters via `process.env` with sensible
+  defaults (see `.env.example`).
 
-- **26 testes** cobrindo todos os módulos em isolado e em integração
-  (49 testes no total considerando variações; rodados sob Node 20+ com
-  `node --test` + `tsx`). Todos passando em CI local.
+- **26 tests** covering every module in isolation and in integration (49
+  tests in total considering variations; run under Node 20+ with
+  `node --test` + `tsx`). All passing on local CI.
 
-- **6 eventos de telemetria** emitidos via `onEvent`: `enqueued`,
+- **6 telemetry events** emitted via `onEvent`: `enqueued`,
   `rate-acquired`, `retry`, `success`, `failed`, `idle`, `paused`,
   `resumed`, `predicted-over-limit`, `concurrency-changed`.
 
-- **2 exemplos**: `examples/basic-usage.ts` (mock fetch, sem custo) e
-  `examples/openai-integration.ts` (real, custa créditos).
+- **2 examples**: `examples/basic-usage.ts` (mock fetch, no cost) and
+  `examples/openai-integration.ts` (real, costs credits).
 
-- **Documentação profissional**: README, `docs/ARCHITECTURE.md`,
+- **Professional documentation**: README, `docs/ARCHITECTURE.md`,
   `docs/API.md`, `docs/RECIPES.md`, `docs/MIGRATION.md`,
   `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`.
 
 - **CI** via GitHub Actions (Node 20/22 matrix: typecheck + lint + test).
 
-### Correções (colaterais, feitas durante a extração do módulo)
+### Fixes (incidental, made while extracting the module)
 
-- eslint flat config (ESLint 9) — migrado de CommonJS para ESM flat config;
-  agora `@eslint/js` declarado explicitamente em `devDependencies`.
-- `provider-client.ts` — removidas variáveis `text` mortas nos branches 429
-  e 5xx (estavam lendo body sem uso).
-- `token-bucket.test.ts` — fix de flake: assert `(remaining <= 59.0001)`
-  era frágil porque o bucket regenera continuamente; agora usa margem
-  58–60 refletindo a realidade de regeneração assíncrona.
+- ESLint flat config (ESLint 9) — migrated from CommonJS to ESM flat config;
+  `@eslint/js` is now explicitly declared in `devDependencies`.
+- `provider-client.ts` — removed dead `text` variables in the 429 and 5xx
+  branches (they were reading the body without using it).
+- `token-bucket.test.ts` — flake fix: the assert
+  `(remaining <= 59.0001)` was fragile because the bucket regenerates
+  continuously; now uses a 58-60 margin reflecting the async regeneration
+  reality.
 
-### Notas
+### Notes
 
-- Sem paths absolutos hard-coded. Sem acoplamento a arquitetura do
-  consumidor. Sem dependência de Redis/BullMQ.
-- Única dependência runtime externa: `p-queue@^8`.
-- Compila com TypeScript 5.7 strict, `nocImplicitAny`,
+- No hard-coded absolute paths. No coupling to the consumer's architecture.
+  No Redis/BullMQ dependency.
+- Only external runtime dependency: `p-queue@^8`.
+- Compiles with TypeScript 5.7 strict, `noImplicitAny`,
   `noUncheckedIndexedAccess`, `verbatimModuleSyntax`.
-- Estado do projeto: 0 regressões conhecidas. 49/49 testes em CI local.
+- Project state: 0 known regressions. 49/49 tests on local CI.

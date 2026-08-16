@@ -1,6 +1,6 @@
-# Referência da API
+# API Reference
 
-> Languages: [Português](./API.md) • [English](./API.en.md)
+> Languages: [English](./API.md) • [Português](./API.pt-BR.md)
 
 ## Exports
 
@@ -49,7 +49,7 @@ import {
 
 ## AiRequestQueue
 
-Classe principal que orquestra fila, rate limiting, retries, AIMD, sync e estimator.
+Main class orchestrating queue, rate limiting, retries, AIMD, sync and estimator.
 
 ### Constructor
 
@@ -59,22 +59,22 @@ new AiRequestQueue(options: AiRequestQueueOptions)
 
 ### AiRequestQueueOptions
 
-| Propriedade | Tipo | Obrigatório | Default | Descrição |
+| Property | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `provider` | `ProviderClient` | ✅ | — | Cliente HTTP que implementa `call()`. |
-| `rateLimiter` | `RateLimit` | ❌ | `CompositeRateLimiter(500, 90_000)` com `safetyMargin` | Rate limiter customizado. Se omitido, cria default aplicando `withSafetyMargin`. |
-| `concurrency` | `number` | ❌ | `1` | Concorrência inicial do `p-queue`. |
-| `adaptiveConcurrency` | `boolean` | ❌ | `false` | Ativa AIMD. |
-| `maxConcurrency` | `number` | ❌ | `max(8, concurrency)` | Teto AIMD. |
-| `minConcurrency` | `number` | ❌ | `1` | Piso AIMD. |
-| `safetyMargin` | `number` | ❌ | `0.8` | Margem no bucket default (0.01–1.0). Ignorado se `rateLimiter` for passado. |
-| `backoff` | `BackoffOptions` | ❌ | `{ maxRetries: 8, baseBackoffMs: 1000, maxBackoffMs: 60_000 }` | Configuração do backoff. |
-| `delayResolver` | `RetryDelayResolver` | ❌ | `exponentialBackoffWithJitter` | Função de delay customizada. |
-| `tokenEstimator` | `TokenEstimatorOptions` | ❌ | `{ alpha: 0.3, initialEstimate: 1000 }` | Configuração do EWMA. |
-| `maxAutoPauseMs` | `number` | ❌ | `60_000` | Teto de auto-pausa em `Retry-After`. |
-| `onEvent` | `(e: QueueEvent) => void` | ❌ | `() => {}` | Callback de telemetria. |
+| `provider` | `ProviderClient` | yes | — | HTTP client implementing `call()`. |
+| `rateLimiter` | `RateLimit` | no | `CompositeRateLimiter(500, 90_000)` with `safetyMargin` | Custom rate limiter. If omitted, a default is built applying `withSafetyMargin`. |
+| `concurrency` | `number` | no | `1` | Initial `p-queue` concurrency. |
+| `adaptiveConcurrency` | `boolean` | no | `false` | Enables AIMD. |
+| `maxConcurrency` | `number` | no | `max(8, concurrency)` | AIMD ceiling. |
+| `minConcurrency` | `number` | no | `1` | AIMD floor. |
+| `safetyMargin` | `number` | no | `0.8` | Margin applied to the default bucket (0.01-1.0). Ignored if `rateLimiter` is supplied. |
+| `backoff` | `BackoffOptions` | no | `{ maxRetries: 8, baseBackoffMs: 1000, maxBackoffMs: 60_000 }` | Backoff configuration. |
+| `delayResolver` | `RetryDelayResolver` | no | `exponentialBackoffWithJitter` | Custom delay function. |
+| `tokenEstimator` | `TokenEstimatorOptions` | no | `{ alpha: 0.3, initialEstimate: 1000 }` | EWMA configuration. |
+| `maxAutoPauseMs` | `number` | no | `60_000` | Ceiling for auto-pause on `Retry-After`. |
+| `onEvent` | `(e: QueueEvent) => void` | no | `() => {}` | Telemetry callback. |
 
-### Métodos
+### Methods
 
 ```typescript
 enqueue<T>(req: ProviderRequest, opts?: EnqueueOptions): Promise<RetryExecutorResult<ProviderResponse<T>>>
@@ -170,11 +170,11 @@ new DefaultProviderClient({ baseUrl: string; apiKey: string; fetchFn?: typeof fe
 call<T>(req: ProviderRequest): Promise<RetryOutcome<ProviderResponse<T>>>
 ```
 
-Classifica:
-- `429` / `5xx` → `retryable: true`
-- `4xx (≠429)` → `retryable: false`
-- Erro de rede → `retryable: true`
-- Parseia `Retry-After` (segundos ou HTTP-date).
+Classifies:
+- `429` / `5xx` -> `retryable: true`
+- `4xx (other than 429)` -> `retryable: false`
+- Network error -> `retryable: true`
+- Parses `Retry-After` (seconds or HTTP-date).
 
 ---
 
@@ -184,11 +184,11 @@ Classifica:
 loadConfig(): AppConfig
 ```
 
-Lê todas as variáveis de ambiente definidas em `.env.example`.
+Reads every environment variable defined in `.env.example`.
 
 ---
 
-## Tipos re-exportados
+## Re-exported types
 
 - `ProviderRequest { path, method?, headers?, body?, estimatedTokens? }`
 - `ProviderResponse<T> { status, headers, body: T }`

@@ -1,8 +1,10 @@
 # rate-guard
 
-> Languages: [Português](./README.md) • [English](./README.en.md)
+> Languages: [English](./README.md) • [Português](./README.pt-BR.md)
 
-> 🛡️ **rate-guard** — seu guarda-costas contra 429. Fila inteligente que aprende o ritmo do provedor, pausa quando ele pede, e nunca te deixa na mão. Zero Redis, zero drama, só código que funciona.
+> 🛡️ **rate-guard** — your bodyguard against 429. A smart queue that learns
+> the provider's pace, pauses when it asks, and never leaves you hanging.
+> Zero Redis, zero drama, just code that works.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)
@@ -13,52 +15,53 @@
 
 ---
 
-## Sumário
+## Table of contents
 
-- [Por que usar?](#por-que-usar)
+- [Why use it?](#why-use-it)
 - [Quickstart](#quickstart)
-- [Arquitetura](#arquitetura)
-- [Mecanismos anti-429](#mecanismos-anti-429)
-- [API pública](#api-pública)
-- [Configuração via `.env`](#configuração-via-env)
-- [Exemplos](#exemplos)
-- [Comparação com alternativas](#comparação-com-alternativas)
-- [Migração](#migração)
+- [Architecture](#architecture)
+- [Anti-429 mechanisms](#anti-429-mechanisms)
+- [Public API](#public-api)
+- [Configuration via `.env`](#configuration-via-env)
+- [Examples](#examples)
+- [Comparison with alternatives](#comparison-with-alternatives)
+- [Migration](#migration)
 - [Roadmap](#roadmap)
-- [Contribuindo](#contribuindo)
-- [Licença](#licença)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## Por que usar?
+## Why use it?
 
-Provedores de IA (OpenAI, Anthropic, Gemini) impõem limites de taxa —
-expressos em `RPM` (requests/minuto) e `TPM` (tokens/minuto). Estourar
-significa receber `429 Too Many Requests`, que:
+AI providers (OpenAI, Anthropic, Gemini) impose rate limits — expressed in
+`RPM` (requests/minute) and `TPM` (tokens/minute). Hitting the ceiling
+means receiving `429 Too Many Requests`, which:
 
-- Atrasa a resposta do usuário.
-- Quebra pipelines em produção.
-- Persiste para "fechar a janela" — sem tratamento, tende a piorar.
+- Delays the user's response.
+- Breaks production pipelines.
+- Persists to "close the window" — without treatment, it tends to worsen.
 
-`rate-guard`é uma **combinação de 5 mecanismos que trabalham juntos** para
-evitar 429 e se recuperar quando ele ocorre:
+`rate-guard` is a **combination of 5 mechanisms that work together** to
+avoid 429 and recover when it happens:
 
-1. **Token bucket pré-acquire** — espera antes de chamar o provedor.
-2. **Pausa automática em `Retry-After`** — fila inteira respeita o reset do provedor.
-3. **Sync de headers** — bucket realinhado com os limites anunciados em runtime.
-4. **EWMA calibration** — aprende custo real de tokens via `usage.total_tokens`.
-5. **AIMD** — concorrência adaptativa (cai em falhas, sobe em sucesso).
+1. **Pre-acquire token bucket** — waits before calling the provider.
+2. **Automatic pause on `Retry-After`** — the whole queue respects the
+   provider's reset.
+3. **Header sync** — bucket realigned with limits announced at runtime.
+4. **EWMA calibration** — learns real token cost via `usage.total_tokens`.
+5. **AIMD** — adaptive concurrency (drops on failures, rises on success).
 
-Sem Redis, sem BullMQ, sem build step obrigatório. Única dependência:
+No Redis, no BullMQ, no mandatory build step. Only runtime dependency:
 [`p-queue@^8`](https://github.com/sindresorhus/p-queue).
 
 ## Quickstart
 
 ```bash
-# 1. Instale deps (apenas `p-queue` como dependência runtime):
+# 1. Install deps (only `p-queue` as a runtime dependency):
 npm install p-queue
 
-# 2. Copie a pasta `src/` deste repo para seu projeto.
+# 2. Copy the `src/` folder of this repo into your project.
 
 # 3. Use:
 ```
@@ -84,17 +87,17 @@ const result = await queue.enqueue({
 });
 ```
 
-## Arquitetura
+## Architecture
 
 ```
-user action → enqueue → [p-queue (concurrencia)] → RateLimiter (RPM + TPM) → ProviderClient → fetch
+user action → enqueue → [p-queue (concurrency)] → RateLimiter (RPM + TPM) → ProviderClient → fetch
         │                                              │                          ↓
-        │                                              ↑   syncFromHeaders em 200  │
-        │                                              │   └── headers x-ratelimit-*
+        │                                              ↑   syncFromHeaders on 200  │
+        │                                              │   └── x-ratelimit-* headers
         │                                              │                          ↓
         │                                              ↑   ┌───────── retry loop ───┐
         │                                              │   │ backoff + jitter      │
-        │                                              │   │ + Retry-After (provedor)
+        │                                              │   │ + Retry-After (provider)
         │                                              │   │   ↓                    │
         │                                              │   │ if retryAfterMs > 0:  │
         │                                              │   │   queue.pause(ms)    │
@@ -103,175 +106,176 @@ user action → enqueue → [p-queue (concurrencia)] → RateLimiter (RPM + TPM)
         │                                              │   │   decreaseConcurrency│
         │                                              │   │ else on success:     │
         │                                              │   │   increaseConcurrency│
-        │                                              └── estímulo → ─────────┘
+        │                                              └── stimulus → ─────────┘
         │
-        └── em cada sucesso:
+        └── on every success:
             • syncFromHeaders(headers) → CompositeRateLimiter.syncRpmTpm(...)
             • extractUsageTokens(body) → TokenEstimator.observe(...)
-            • increaseConcurrency (se AIMD ativo)
+            • increaseConcurrency (if AIMD is on)
 ```
 
-## Mecanismos anti-429
+## Anti-429 mechanisms
 
-### #0 Token bucket pré-acquire (RPM + TPM)
+### #0 Pre-acquire token bucket (RPM + TPM)
 
-`ContinuousBucket` regenera `capacity` tokens a cada `intervalMs` (60s) de
-forma **contínua** proporcional ao tempo decorrido. `CompositeRateLimiter`
-adquire 1 unidade de RPM + `cost` unidades de TPM em sequência, respeitando o
-eixo mais restritivo. Resposta esperada: a fila **espera** antes de chamar o
-provedor, em vez de disparar para tratar 429 depois.
+`ContinuousBucket` regenerates `capacity` tokens every `intervalMs` (60s)
+**continuously**, proportional to elapsed time. `CompositeRateLimiter`
+acquires 1 RPM unit + `cost` TPM units in sequence, respecting the most
+restrictive axis. Expected behavior: the queue **waits** before calling
+the provider, instead of firing and dealing with 429 afterwards.
 
-### #1 Sync de bucket via headers do provedor
+### #1 Bucket sync via provider headers
 
-Headers suportados (lidos em respostas de **sucesso**):
+Supported headers (read on **success** responses):
 
-| Provedor  | Headers |
+| Provider  | Headers |
 |-----------|---------|
 | OpenAI    | `x-ratelimit-limit-requests`, `x-ratelimit-remaining-requests`, `x-ratelimit-limit-tokens`, `x-ratelimit-remaining-tokens` |
 | Anthropic | `anthropic-ratelimit-requests-limit`, `anthropic-ratelimit-requests-remaining`, `anthropic-ratelimit-tokens-limit`, `anthropic-ratelimit-tokens-remaining` |
 
-`syncRpmTpm(rpm, tpm)` realinha `capacity` e `tokens` dos buckets internos,
-zerando o relógio de regeneração. Elimina drift acumulado após longo uso.
+`syncRpmTpm(rpm, tpm)` realigns `capacity` and `tokens` of the internal
+buckets, resetting the regeneration clock. Eliminates accumulated drift
+after long usage.
 
-### #2 Pausa automática em `Retry-After`
+### #2 Automatic pause on `Retry-After`
 
-Quando um 429 chega com `Retry-After: <segundos>`, **todos os itens da fila
-esperam** — não apenas o que falhou — porque disparar a próxima request
-imediatamente resultaria em outro 429. Implementado com `queue.pause()` +
-`setTimeout` (`unref`'d). Pausa manual via `pause()` **bloqueia** a
-auto-retomada. Teto `maxAutoPauseMs` (default 60s) protege contra header
-mal-formado.
+When a 429 arrives with `Retry-After: <seconds>`, **all queue items wait** —
+not just the one that failed — because firing the next request immediately
+would result in another 429. Implemented with `queue.pause()` +
+`setTimeout` (`unref`'d). A manual pause via `pause()` **blocks** the
+auto-resume. The `maxAutoPauseMs` ceiling (default 60s) protects against
+malformed headers.
 
-Eventos `paused`/`resumed` vão para `onEvent` com `reason: "auto"|"manual"`.
+`paused`/`resumed` events go to `onEvent` with `reason: "auto"|"manual"`.
 
-### #3 Calibração da estimativa de tokens (EWMA)
+### #3 Token-estimate calibration (EWMA)
 
-`TokenEstimator` aprende com `usage.total_tokens` (ou `prompt_tokens +
-completion_tokens`) das respostas de sucesso usando EWMA
-(`alpha=0.3` default — reage em 3-5 samples). Estimativa default passa a
-ser a média calibrada, não um número fixo 1000.
+`TokenEstimator` learns from `usage.total_tokens` (or `prompt_tokens +
+completion_tokens`) on success responses, using EWMA
+(`alpha=0.3` default — reacts in 3-5 samples). The default estimate
+becomes the calibrated moving average, not a fixed 1000 number.
 
-Evento `predicted-over-limit` é emitido **antes** de `acquire` quando a
-estimativa excede o TPM remanescente — a fila ainda tenta (acquire dorme),
-mas a aplicação pode logar/alertar.
+The `predicted-over-limit` event is emitted **before** `acquire` when the
+estimate exceeds the remaining TPM — the queue still tries (acquire
+sleeps), but the application can log/alert.
 
-### #4 Backoff exponencial + jitter (mais agressivo)
+### #4 Exponential backoff + jitter (more aggressive)
 
 Defaults:
 
-- `maxRetries: 8` (era 5).
-- `maxBackoffMs: 60_000` (era 30s).
+- `maxRetries: 8` (was 5).
+- `maxBackoffMs: 60_000` (was 30s).
 
-Janela de recuperação máxima: ~5min contra quedas prolongadas do provedor.
-Overridável via `opts.backoff` ou env vars.
+Maximum recovery window: ~5min against prolonged provider outages.
+Overridable via `opts.backoff` or env vars.
 
-Equal jitter: `delay = cap/2 + random(0, cap/2)` — dispersa retentativas e
-evita thundering herd. `Retry-After` do provedor tem precedência.
+Equal jitter: `delay = cap/2 + random(0, cap/2)` — disperses retries and
+avoids the thundering herd. The provider's `Retry-After` takes precedence.
 
-### #5 Margem de segurança 0.8× (default)
+### #5 Safety margin 0.8× (default)
 
-Quando a fila constrói o `CompositeRateLimiter` default (sem
-`opts.rateLimiter` explícito), aplica `withSafetyMargin(500, 90_000, 0.8)` →
-400 RPM / 72 k TPM. Operar em 80% do teto absorve janelas de pico do provedor
-sem rejeitar suas requests.
+When the queue builds the default `CompositeRateLimiter` (without an
+explicit `opts.rateLimiter`), it applies
+`withSafetyMargin(500, 90_000, 0.8)` → 400 RPM / 72 k TPM. Operating at
+80% of the ceiling absorbs provider peak windows without rejecting your
+requests.
 
-Configurável via `opts.safetyMargin` ou `SAFETY_MARGIN` env (0.01–1.0). Use
-`1.0` para desativar.
+Configurable via `opts.safetyMargin` or the `SAFETY_MARGIN` env var
+(0.01–1.0). Use `1.0` to disable.
 
-### #6 Concorrência adaptativa (AIMD)
+### #6 Adaptive concurrency (AIMD)
 
-`opts.adaptiveConcurrency: true` (default false) ativa Additive Increase /
-Multiplicative Decrease:
+`opts.adaptiveConcurrency: true` (default false) activates Additive Increase
+/ Multiplicative Decrease:
 
-- Em 429/5xx: `concurrency = max(min, floor(c / 2))`.
-- Em sucesso: `concurrency = min(max, c + 1)`.
+- On 429/5xx: `concurrency = max(min, floor(c / 2))`.
+- On success: `concurrency = min(max, c + 1)`.
 
-Trajetória após burst de 429: 8 → 4 → 2 → 1; em seguida sobe gradualmente até
-o teto com sucessos consecutivos. Limites via `maxConcurrency` /
-`minConcurrency`. Evento `concurrency-changed` com `{ reason, from, to }` em
-toda mudança.
+Trajectory after a 429 burst: 8 → 4 → 2 → 1; then gradually rises up to the
+ceiling with consecutive successes. Limits via `maxConcurrency` /
+`minConcurrency`. A `concurrency-changed` event with `{ reason, from, to }`
+is emitted on every change.
 
-## API pública
+## Public API
 
-Veja [`docs/API.md`](./docs/API.md) para referência completa. Resumo:
+See [`docs/API.md`](./docs/API.md) for the full reference. Summary:
 
-| Export | Função |
+| Export | Function |
 |---|---|
-| `AiRequestQueue` | Classe principal: fila + rate limiting + retry + AIMD + sync + estimator |
-| `CompositeRateLimiter` | Bucket duplo (RPM + TPM) com `acquire`, `syncRpmTpm` |
-| `RequestRateLimiter`, `TokenRateLimiter` | Buckets individuais |
-| `withSafetyMargin(rpm, tpm, margin)` | Aplica fator |
-| `TokenEstimator` | EWMA com `observe`/`current` |
-| `DefaultProviderClient` | Wrapper `fetch` que classifica 429/5xx/4xx |
-| `RetryExecutor`, `exponentialBackoffWithJitter`, `fullJitterBackoff` | Retentativas |
-| `NonRetryableError`, `MaxRetriesExceededError` | Erros tipados |
-| `loadConfig` | Carrega params via `process.env` |
-| `AiRequestQueueOptions`, `QueueEvent`, `ProviderRequest`, `ProviderResponse` | Tipos |
+| `AiRequestQueue` | Main class: queue + rate limiting + retry + AIMD + sync + estimator |
+| `CompositeRateLimiter` | Dual bucket (RPM + TPM) with `acquire`, `syncRpmTpm` |
+| `RequestRateLimiter`, `TokenRateLimiter` | Individual buckets |
+| `withSafetyMargin(rpm, tpm, margin)` | Applies a factor |
+| `TokenEstimator` | EWMA with `observe`/`current` |
+| `DefaultProviderClient` | `fetch` wrapper that classifies 429/5xx/4xx |
+| `RetryExecutor`, `exponentialBackoffWithJitter`, `fullJitterBackoff` | Retry |
+| `NonRetryableError`, `MaxRetriesExceededError` | Typed errors |
+| `loadConfig` | Loads params via `process.env` |
+| `AiRequestQueueOptions`, `QueueEvent`, `ProviderRequest`, `ProviderResponse` | Types |
 
-## Configuração via `.env`
+## Configuration via `.env`
 
-Veja `.env.example`. Variáveis suportadas:
+See `.env.example`. Supported variables:
 
-| Variável | Default | Descrição |
+| Variable | Default | Description |
 |---|---|---|
-| `PROVIDER_BASE_URL` | `https://api.openai.com/v1` | URL base |
-| `PROVIDER_API_KEY` | vazio | API key do provedor |
-| `RPM_LIMIT` | 500 | Requisições/minuto |
-| `TPM_LIMIT` | 90000 | Tokens/minuto |
-| `QUEUE_CONCURRENCY` | 1 | Concorrência inicial |
-| `ADAPTIVE_CONCURRENCY` | false | Ativa AIMD (via env — string "true") |
-| `MAX_CONCURRENCY` | 8 | Teto AIMD |
-| `MIN_CONCURRENCY` | 1 | Piso AIMD |
-| `SAFETY_MARGIN` | 0.8 | Margem aplicada ao bucket default (`0 < margin <= 1`) |
-| `MAX_RETRIES` | 8 | Máximo de retentativas |
-| `BASE_BACKOFF_MS` | 1000 | Backoff base |
-| `MAX_BACKOFF_MS` | 60000 | Teto do backoff |
-| `MAX_AUTO_PAUSE_MS` | 60000 | Teto do auto-pause em `Retry-After` |
+| `PROVIDER_BASE_URL` | `https://api.openai.com/v1` | Base URL |
+| `PROVIDER_API_KEY` | empty | Provider API key |
+| `RPM_LIMIT` | 500 | Requests/minute |
+| `TPM_LIMIT` | 90000 | Tokens/minute |
+| `QUEUE_CONCURRENCY` | 1 | Initial concurrency |
+| `ADAPTIVE_CONCURRENCY` | false | Enables AIMD (via env — string "true") |
+| `MAX_CONCURRENCY` | 8 | AIMD ceiling |
+| `MIN_CONCURRENCY` | 1 | AIMD floor |
+| `SAFETY_MARGIN` | 0.8 | Margin applied to the default bucket (`0 < margin <= 1`) |
+| `MAX_RETRIES` | 8 | Maximum retries |
+| `BASE_BACKOFF_MS` | 1000 | Base backoff |
+| `MAX_BACKOFF_MS` | 60000 | Backoff ceiling |
+| `MAX_AUTO_PAUSE_MS` | 60000 | Auto-pause ceiling on `Retry-After` |
 
-## Exemplos
+## Examples
 
-- [`examples/basic-usage.ts`](./examples/basic-usage.ts) — mock fetch que
-  simula 429 + 200. Isolado, sem custo. Demonstra pausa, sync, EWMA, AIMD.
+- [`examples/basic-usage.ts`](./examples/basic-usage.ts) — mock fetch that
+  simulates 429 + 200. Isolated, no cost. Demonstrates pause, sync, EWMA, AIMD.
 - [`examples/openai-integration.ts`](./examples/openai-integration.ts) —
-  integração real com OpenAI. **Custa créditos**.
+  real integration with OpenAI. **Costs credits**.
 
-## Comparação com alternativas
+## Comparison with alternatives
 
-| Critério | rate-guard | BullMQ | Bottleneck | p-limit |
+| Criterion | rate-guard | BullMQ | Bottleneck | p-limit |
 |---|---|---|---|---|
-| Redis | não | **sim** | não | não |
-| Token bucket | sim (RPM + TPM) | não | sim | não |
-| Backoff + Retry-After | sim | sim | não | não |
-| Sync de headers em runtime | sim | não | não | não |
-| EWMA calibration | sim | não | não | não |
-| AIMD concorrência | sim | manual | não | não |
-| Predicted-over-limit event | sim | não | não | não |
-| Dependências runtime | 1 (p-queue) | Redis + ioredis | 0 | 0 |
-| Multi-processo | não (in-memory) | sim | não | não |
+| Redis | no | **yes** | no | no |
+| Token bucket | yes (RPM + TPM) | no | yes | no |
+| Backoff + Retry-After | yes | yes | no | no |
+| Runtime header sync | yes | no | no | no |
+| EWMA calibration | yes | no | no | no |
+| AIMD concurrency | yes | manual | no | no |
+| Predicted-over-limit event | yes | no | no | no |
+| Runtime dependencies | 1 (p-queue) | Redis + ioredis | 0 | 0 |
+| Multi-process | no (in-memory) | yes | no | no |
 | Bundle size | ~20KB | ~200KB | ~10KB | ~5KB |
 
-Use `rate-guard` quando você precisa de **auto-regulação inteligente** em
-processo único. Use BullMQ quando você precisa de persistência/multi-processo.
+Use `rate-guard` when you need smart self-regulation in a single process.
+Use BullMQ when you need persistence/multi-process.
 
-## Migração
+## Migration
 
-Veja [`docs/MIGRATION.md`](./docs/MIGRATION.md) para migração de BullMQ,
-Bottleneck, p-limit, ou implementação caseira.
+See [`docs/MIGRATION.md`](./docs/MIGRATION.md) for migrating from
+BullMQ, Bottleneck, p-limit, or a homegrown implementation.
 
 ## Roadmap
 
-- [ ] Cache idempotente de respostas (hash do body) — reduz volume estrutural.
-- [ ] Desduplicação de chamadas em voo (in-flight dedup).
-- [ ] Multi-processo via shared state (sem Redis, via SQLite WAL).
-- [ ] Adaptador para Anthropic SDK python-style (cache de prompts).
-- [ ] Métricas Prometheus prontas.
+- [ ] Idempotent response cache (body hash) — structural volume reduction.
+- [ ] In-flight call deduplication.
+- [ ] Multi-process via shared state (without Redis, via SQLite WAL).
+- [ ] Adapter for Anthropic SDK Python-style (prompt cache).
+- [ ] Prometheus metrics ready.
 
-## Contribuindo
+## Contributing
 
-Veja [`CONTRIBUTING.md`](./CONTRIBUTING.md) e nosso
-[`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md). Em resumo: abra uma issue antes
-de PRs grandes, escreva testes, mantenha tudo verde.
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md). In short: open an issue before
+large PRs, write tests, keep everything green.
 
-## Licença
+## License
 
 [MIT](./LICENSE) — © 2026 rate-guard contributors.

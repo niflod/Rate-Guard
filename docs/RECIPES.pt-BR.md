@@ -1,8 +1,8 @@
-# Recipes
+# Receitas
 
-> Languages: [Português](./RECIPES.md) • [English](./RECIPES.en.md)
+> Languages: [English](./RECIPES.md) • [Português](./RECIPES.pt-BR.md)
 
-## OpenAI (minimal configuration)
+## OpenAI (configuração mínima)
 
 ```ts
 import { AiRequestQueue } from "rate-guard";
@@ -20,9 +20,9 @@ const queue = new AiRequestQueue({
 });
 ```
 
-## Anthropic (`anthropic-ratelimit-*` headers)
+## Anthropic (headers `anthropic-ratelimit-*`)
 
-The same code works — the queue auto-detects Anthropic headers.
+O mesmo código funciona — a fila detecta automaticamente headers do Anthropic.
 
 ```ts
 const queue = new AiRequestQueue({
@@ -30,18 +30,18 @@ const queue = new AiRequestQueue({
     baseUrl: "https://api.anthropic.com/v1",
     apiKey: process.env.ANTHROPIC_API_KEY!,
   }),
-  // the queue detects anthropic-ratelimit-* on success
+  // a fila detecta anthropic-ratelimit-* em sucesso
 });
 ```
 
-## Custom provider
+## Provedor customizado
 
-Implement `ProviderClient`:
+Implemente `ProviderClient`:
 
 ```ts
 import { ProviderClient, ProviderRequest, ProviderResponse, RetryOutcome, retry, success } from "rate-guard";
 
-class MyProvider implements ProviderClient {
+class MeuProvider implements ProviderClient {
   async call<T>(req: ProviderRequest): Promise<RetryOutcome<ProviderResponse<T>>> {
     const res = await fetch(`${this.baseUrl}${req.path}`, {
       method: req.method ?? "POST",
@@ -56,7 +56,7 @@ class MyProvider implements ProviderClient {
 }
 ```
 
-## Observability (Prometheus-compatible)
+## Observabilidade (Prometheus-compatible)
 
 ```ts
 import { AiRequestQueue, QueueEvent } from "rate-guard";
@@ -75,31 +75,31 @@ const queue = new AiRequestQueue({
     }
   },
 });
-// Periodically export to Prometheus / logs
+// Periodicamente exportar para Prometheus / logs
 ```
 
-## Priority (high -> low)
+## Prioridade (high → low)
 
 ```ts
-await queue.enqueue(req, { priority: 10 }); // high
+await queue.enqueue(req, { priority: 10 }); // alta
 await queue.enqueue(req, { priority: 0 });  // normal
-await queue.enqueue(req, { priority: -5 }); // low
+await queue.enqueue(req, { priority: -5 }); // baixa
 ```
 
-## Cancel / pause manually
+## Cancelar / pausar manual
 
 ```ts
-queue.pause();   // pauses everything
-queue.resume();  // resumes
+queue.pause();   // pausa tudo
+queue.resume();  // retoma
 ```
 
-## Custom per-call estimate
+## Estimativa customizada por chamada
 
 ```ts
 await queue.enqueue({ path: "/chat", body: "..." }, { estimatedTokens: 2000 });
 ```
 
-## Test with a mock (no cost)
+## Testar com mock (sem custo)
 
 ```ts
 const mockFetch: typeof fetch = async () => {
@@ -111,7 +111,7 @@ const provider = new DefaultProviderClient({ baseUrl: "https://x", apiKey: "k", 
 
 ---
 
-## Framework integration
+## Integração com frameworks
 
 ### Express / Fastify (middleware)
 
@@ -126,14 +126,14 @@ app.post("/chat", async (req, res) => {
 });
 ```
 
-### Worker queue (BullMQ-style but without Redis)
+### Worker queue (BullMQ-style mas sem Redis)
 
 ```ts
-// Use AiRequestQueue itself — it is already a queue with backpressure, retry and AIMD
+// Use a própria AiRequestQueue — ela já é uma fila com backpressure, retry e AIMD
 const queue = new AiRequestQueue({ provider, concurrency: 2 });
 
 for (const job of jobs) {
-  queue.enqueue(job); // doesn't block, adds to the queue
+  queue.enqueue(job); // não bloqueia, adiciona à fila
 }
-await queue.onIdle(); // waits for everything
+await queue.onIdle(); // aguarda tudo
 ```

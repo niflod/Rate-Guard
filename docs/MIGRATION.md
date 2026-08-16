@@ -1,66 +1,66 @@
-# Guia de Migração
+# Migration Guide
 
-> Languages: [Português](./MIGRATION.md) • [English](./MIGRATION.en.md)
+> Languages: [English](./MIGRATION.md) • [Português](./MIGRATION.pt-BR.md)
 
-## De BullMQ / Redis Queue
+## From BullMQ / Redis Queue
 
-| Conceito | BullMQ | rate-guard |
+| Concept | BullMQ | rate-guard |
 |---|---|---|
-| Fila | `Queue` + Redis | `AiRequestQueue` (in-memory) |
+| Queue | `Queue` + Redis | `AiRequestQueue` (in-memory) |
 | Rate limit | Manual / plugins | `CompositeRateLimiter` + auto |
 | Retry | `attempts` + backoff | `RetryExecutor` + backoff + jitter |
-| Retry-After | Manual | Automático (pausa fila inteira) |
+| Retry-After | Manual | Automatic (pauses the whole queue) |
 | Concurrency | `concurrency` | `concurrency` + `adaptiveConcurrency` (AIMD) |
-| Persistência | Sim (Redis) | Não (in-memory) |
-| Multi-processo | Sim | Não (single-process) |
+| Persistence | Yes (Redis) | No (in-memory) |
+| Multi-process | Yes | No (single-process) |
 
-### Passos de migração
+### Migration steps
 
-1. Substitua `new Queue("name")` por `new AiRequestQueue({ provider, ... })`.
-2. Mova lógica de retry do worker para `opts.backoff` / `RetryExecutor`.
-3. Remova Redis da infra — a fila roda no mesmo processo.
-4. Se precisar persistência, veja roadmap (SQLite WAL planejado).
+1. Replace `new Queue("name")` with `new AiRequestQueue({ provider, ... })`.
+2. Move retry logic from the worker into `opts.backoff` / `RetryExecutor`.
+3. Drop Redis from the infra — the queue runs in the same process.
+4. If you need persistence, see the roadmap (SQLite WAL planned).
 
-**Quando NÃO migrar**: se você precisa de persistência entre reinícios, multi-processo, ou mensagens que sobrevivem a crash.
+**When NOT to migrate**: if you need persistence across restarts, multi-process, or messages that survive crashes.
 
 ---
 
-## De Bottleneck / p-limit
+## From Bottleneck / p-limit
 
 | Feature | Bottleneck / p-limit | rate-guard |
 |---|---|---|
-| Token bucket (RPM) | Sim (manual) | Sim (auto + sync) |
-| Token bucket (TPM) | Não | Sim |
-| Backoff + jitter | Não | Sim |
-| Retry-After | Não | Sim (pausa fila) |
-| Sync de headers | Não | Sim |
-| EWMA calibration | Não | Sim |
-| AIMD | Não | Sim |
-| Predicted-over-limit | Não | Sim |
+| Token bucket (RPM) | Yes (manual) | Yes (auto + sync) |
+| Token bucket (TPM) | No | Yes |
+| Backoff + jitter | No | Yes |
+| Retry-After | No | Yes (pauses queue) |
+| Header sync | No | Yes |
+| EWMA calibration | No | Yes |
+| AIMD | No | Yes |
+| Predicted-over-limit | No | Yes |
 
-### Passos de migração
+### Migration steps
 
-1. Substitua `limiter.schedule(fn)` por `queue.enqueue(req)`.
-2. Se usava `minTime`/`maxConcurrent`, mapeie para `rateLimiter` + `concurrency` / `adaptiveConcurrency`.
-3. Ganha: sync de headers, EWMA, AIMD, Retry-After automático.
-
----
-
-## De implementação caseira (TokenBucket + retry manual)
-
-Se você já tem um token bucket e loop de retry:
-
-1. Remova o bucket manual — use `CompositeRateLimiter`.
-2. Remova o loop `while (retry) { try {...} catch {...} sleep(...) }` — use `RetryExecutor`.
-3. Remova parse manual de `Retry-After` — `DefaultProviderClient` faz.
-4. Adicione `syncFromHeaders` e `TokenEstimator` para ganhar sync + EWMA.
+1. Replace `limiter.schedule(fn)` with `queue.enqueue(req)`.
+2. If you used `minTime`/`maxConcurrent`, map to `rateLimiter` + `concurrency` / `adaptiveConcurrency`.
+3. Gain: header sync, EWMA, AIMD, automatic Retry-After.
 
 ---
 
-## Checklist de validação pós-migração
+## From a homegrown implementation (TokenBucket + manual retry)
 
-- [ ] `npm run typecheck` passa.
-- [ ] `npm test` passa (rodar suites existentes + adicionar seus casos).
-- [ ] `npm run example` roda sem erro.
-- [ ] Em produção, monitore eventos `paused` / `predicted-over-limit` / `concurrency-changed`.
-- [ ] Ajuste `SAFETY_MARGIN` / `adaptiveConcurrency` / `maxRetries` conforme seu provedor.
+If you already have a token bucket and retry loop:
+
+1. Remove the manual bucket — use `CompositeRateLimiter`.
+2. Remove the `while (retry) { try {...} catch {...} sleep(...) }` loop — use `RetryExecutor`.
+3. Remove manual `Retry-After` parsing — `DefaultProviderClient` does it.
+4. Add `syncFromHeaders` and `TokenEstimator` to gain sync + EWMA.
+
+---
+
+## Post-migration validation checklist
+
+- [ ] `npm run typecheck` passes.
+- [ ] `npm test` passes (run existing suites + add your own cases).
+- [ ] `npm run example` runs without errors.
+- [ ] In production, monitor `paused` / `predicted-over-limit` / `concurrency-changed` events.
+- [ ] Tune `SAFETY_MARGIN` / `adaptiveConcurrency` / `maxRetries` according to your provider.
