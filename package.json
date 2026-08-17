@@ -4,14 +4,14 @@
   "description": "🛡️ rate-guard — your bodyguard against 429. A smart queue that learns the provider's pace, pauses when asked, and never leaves you hanging. Zero Redis, zero drama, just code that works.",
   "type": "module",
   "license": "MIT",
-  "author": "",
-  "homepage": "https://github.com/YOUR_GITHUB_USERNAME/rate-guard#readme",
+  "author": "niflod",
+  "homepage": "https://github.com/niflod/rate-guard#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YOUR_GITHUB_USERNAME/rate-guard.git"
+    "url": "git+https://github.com/niflod/rate-guard.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_GITHUB_USERNAME/rate-guard/issues"
+    "url": "https://github.com/niflod/rate-guard/issues"
   },
   "keywords": [
     "rate-limiting",
